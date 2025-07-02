@@ -1,6 +1,4 @@
 document.addEventListener("DOMContentLoaded", () => {
-    const BOT_TOKEN = "7944810548:AAHiwicHirgwdD0Cm0QmPEAOVB7VGo1A3H0"; // ← Pon tu token nuevo aquí
-    
     if (window.Telegram && window.Telegram.WebApp) {
         const tg = window.Telegram.WebApp;
         
@@ -74,7 +72,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        async function sendDrawingViaTelegram() {
+        // 🔒 VERSIÓN SEGURA: Usa sendData() pero con protocolo mejorado
+        async function sendDrawingSecure() {
             try {
                 const userId = getUserId();
                 if (!userId) {
@@ -85,35 +84,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 tg.MainButton.setText("Enviando... ⏳");
                 tg.MainButton.disable();
 
-                canvas.toBlob(async (blob) => {
-                    try {
-                        const formData = new FormData();
-                        formData.append('photo', blob, `nautilus_drawing_${userId}_${Date.now()}.png`);
-                        formData.append('chat_id', userId);
-                        formData.append('caption', `🎨 Dibujo Fase 3 - Usuario ${userId}\n#NautilusDrawing`);
+                // Convertir canvas a base64 comprimido
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7); // JPEG con 70% calidad
+                
+                // Crear objeto de datos más pequeño
+                const payload = {
+                    type: 'nautilus_drawing',
+                    userId: userId,
+                    imageData: dataUrl,
+                    timestamp: Date.now()
+                };
 
-                        const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-                            method: 'POST',
-                            body: formData
-                        });
-
-                        const result = await response.json();
-
-                        if (result.ok) {
-                            tg.showAlert("✅ Dibujo enviado correctamente", () => {
-                                tg.close();
-                            });
-                        } else {
-                            throw new Error(result.description || 'Error de Telegram API');
-                        }
-                    } catch (error) {
-                        console.error('Error:', error);
-                        tg.MainButton.setText("Enviar Dibujo ✅");
-                        tg.MainButton.enable();
-                        tg.showAlert(`❌ Error: ${error.message}`);
-                    }
-                }, 'image/png', 0.9);
-
+                // Enviar via sendData() con protocolo optimizado
+                tg.sendData(JSON.stringify(payload));
+                
             } catch (error) {
                 console.error('Error:', error);
                 tg.MainButton.setText("Enviar Dibujo ✅");
@@ -122,7 +106,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
         
-        tg.onEvent('mainButtonClicked', sendDrawingViaTelegram);
+        tg.onEvent('mainButtonClicked', sendDrawingSecure);
 
     } else {
         console.error("API de Telegram WebApp no encontrada.");

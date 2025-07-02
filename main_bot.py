@@ -34,8 +34,7 @@ TARGET_POOL = [
     {"id": "T003", "name": "Torre Eiffel", "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Tour_Eiffel_de_Nuit_-_Paris_2007_v2.jpg/1024px-Tour_Eiffel_de_Nuit_-_Paris_2007_v2.jpg"},
 ]
 
-import time
-CANVAS_URL = f"https://pixatrip1984.github.io/nautilus-canvas/index.html?cache_bust={int(time.time())}"
+CANVAS_URL = "https://pixatrip1984.github.io/nautilus-canvas/"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -72,10 +71,46 @@ async def fase_2_sensorial(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
     return FASE_3_BOCETO
 
-async def handle_drawing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Maneja el dibujo recibido como foto"""
-    if update.message.photo:
-        # Guardar la foto
+async def fase_3_boceto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe el dibujo desde web_app_data con protocolo optimizado"""
+    if update.effective_message and update.effective_message.web_app_data:
+        try:
+            import json
+            import base64
+            from io import BytesIO
+            
+            # Parsear datos JSON
+            data = json.loads(update.effective_message.web_app_data.data)
+            
+            if data.get('type') == 'nautilus_drawing':
+                # Procesar imagen
+                image_data = data['imageData']
+                header, encoded = image_data.split(",", 1)
+                image_bytes = base64.b64decode(encoded)
+                image_stream = BytesIO(image_bytes)
+                
+                # Enviar imagen
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=image_stream,
+                    caption="✅ <b>Boceto recibido</b>"
+                )
+                
+                context.user_data["drawing_received"] = True
+                
+                await update.effective_message.reply_html(
+                    "<b>FASE 4: CONCEPTUAL</b>\n"
+                    "Describe cualidades intangibles e impresiones abstractas."
+                )
+                return FASE_4_CONCEPTUAL
+            
+        except Exception as e:
+            logger.error(f"Error procesando drawing: {e}")
+            await update.effective_message.reply_text("Error procesando dibujo. Intenta de nuevo.")
+            return FASE_3_BOCETO
+    
+    # Si es foto directa
+    if update.message and update.message.photo:
         photo = update.message.photo[-1]
         context.user_data["drawing_file_id"] = photo.file_id
         
@@ -124,7 +159,8 @@ def main():
             FASE_1_GESTALT: [MessageHandler(filters.TEXT & ~filters.COMMAND, fase_1_gestalt)],
             FASE_2_SENSORIAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, fase_2_sensorial)],
             FASE_3_BOCETO: [
-                MessageHandler(filters.PHOTO, handle_drawing),
+                MessageHandler(filters.StatusUpdate.WEB_APP_DATA, fase_3_boceto),
+                MessageHandler(filters.PHOTO, fase_3_boceto),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, fase_4_conceptual)
             ],
             FASE_4_CONCEPTUAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, fase_4_conceptual)],
