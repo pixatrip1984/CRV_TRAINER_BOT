@@ -7,23 +7,16 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- El contenedor principal para centrar el lienzo -->
     <div id="canvas-container">
         <canvas id="drawing-canvas"></canvas>
     </div>
-
-    <!-- La sección de controles en la parte inferior.
-         Se ha eliminado el botón "Enviar Dibujo" de aquí,
-         ya que ahora será gestionado por la API de Telegram. -->
     <div id="controls">
+        <button id="download-button">Finalizar y Preparar para Enviar</button>
         <button id="clear-button">Borrar Todo</button>
     </div>
     
-    <!-- Scripts -->
-    <!-- Importamos la librería de la API de Telegram -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    
-    <!-- Importamos nuestro script personalizado que contiene la lógica del lienzo y la comunicación -->
+    <!-- NO necesitamos el script de la API de Telegram para este método -->
+    <!-- <script src="https://telegram.org/js/telegram-web-app.js"></script> --> 
     <script src="script.js"></script>
 </body>
 </html>
