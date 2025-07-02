@@ -1,0 +1,13 @@
+# Dependencias para el bot de Telegram
+python-telegram-bot
+
+# Para cargar las variables de entorno desde el archivo .env
+python-dotenv
+
+# Librería oficial de OpenAI, usada para la compatibilidad con la API de OpenRouter
+openai
+
+# (Opcional, pero muy recomendado) Para manejar imágenes fácilmente
+# Pillow es necesaria para algunas operaciones con imágenes, aunque a veces 
+# python-telegram-bot la instala como dependencia. Es bueno tenerla explícitamente.
+Pillow
