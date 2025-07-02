@@ -4,5 +4,46 @@
 # Ignorar archivos y directorios de Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Directorios de entornos virtuales
 /venv/
 /.venv/
+/rev/
+/env/
+/.env/
+
+# Archivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos de log
+*.log
+
+# Archivos temporales de imagen generados por el bot
+temp_images/
+drawings/
+
+# Archivos de configuración del sistema
+.DS_Store
+Thumbs.db
