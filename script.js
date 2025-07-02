@@ -72,8 +72,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        // 🔒 VERSIÓN SEGURA: Usa sendData() pero con protocolo mejorado
-        async function sendDrawingSecure() {
+        // 🔥 SOLUCIÓN DEFINITIVA: Crea imagen y guía al usuario a enviarla manualmente
+        async function sendDrawingFinal() {
             try {
                 const userId = getUserId();
                 if (!userId) {
@@ -81,23 +81,49 @@ document.addEventListener("DOMContentLoaded", () => {
                     return;
                 }
 
-                tg.MainButton.setText("Enviando... ⏳");
+                tg.MainButton.setText("Procesando... ⏳");
                 tg.MainButton.disable();
 
-                // Convertir canvas a base64 comprimido
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.7); // JPEG con 70% calidad
-                
-                // Crear objeto de datos más pequeño
-                const payload = {
-                    type: 'nautilus_drawing',
-                    userId: userId,
-                    imageData: dataUrl,
-                    timestamp: Date.now()
-                };
+                // Crear imagen descargable
+                canvas.toBlob((blob) => {
+                    try {
+                        // Crear URL temporal
+                        const url = URL.createObjectURL(blob);
+                        
+                        // Crear enlace invisible de descarga
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `nautilus_drawing_${userId}_${Date.now()}.png`;
+                        
+                        // Forzar descarga
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        // Limpiar URL
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        
+                        // Mostrar instrucciones al usuario
+                        tg.showAlert(
+                            "✅ Imagen guardada!\n\n" +
+                            "📤 PASO FINAL:\n" +
+                            "1. Sal de esta ventana\n" +
+                            "2. Adjunta la imagen descargada al chat\n" +
+                            "3. Envíala como foto al bot\n\n" +
+                            "El bot continuará automáticamente a la Fase 4.",
+                            () => {
+                                tg.close();
+                            }
+                        );
+                        
+                    } catch (error) {
+                        console.error('Error:', error);
+                        tg.MainButton.setText("Enviar Dibujo ✅");
+                        tg.MainButton.enable();
+                        tg.showAlert("❌ Error procesando imagen");
+                    }
+                }, 'image/png', 0.9);
 
-                // Enviar via sendData() con protocolo optimizado
-                tg.sendData(JSON.stringify(payload));
-                
             } catch (error) {
                 console.error('Error:', error);
                 tg.MainButton.setText("Enviar Dibujo ✅");
@@ -106,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
         
-        tg.onEvent('mainButtonClicked', sendDrawingSecure);
+        tg.onEvent('mainButtonClicked', sendDrawingFinal);
 
     } else {
         console.error("API de Telegram WebApp no encontrada.");
