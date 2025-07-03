@@ -64,6 +64,32 @@
         "sensorial": "obra humana, ingeniería, elegancia, firme y sólido, edificación voluminosa",
         "conceptual": "función de residir dentro, energía de alta responsabilidad, emoción de conquista"
       }
+    },
+    {
+      "timestamp": "2025-07-03T15:34:23.464204",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "80525-8505",
+      "target_name": "Historical Stone Bridge",
+      "target_url": "https://www.shutterstock.com/image-photo/stone-bridge-arches-over-tranquil-260nw-1535592467.jpg",
+      "score": 6.5,
+      "phases": {
+        "gestalt": "Grande, fresco, sólido, suave al tacto, largo, estructura cimentada",
+        "sensorial": "tonalidades grises verdosas",
+        "conceptual": "antiguedad, conexión entre dos puntos"
+      }
+    },
+    {
+      "timestamp": "2025-07-03T15:58:25.452046",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "55738",
+      "target_name": "Tranquil Ancient Stone",
+      "target_url": "https://l450v.alamy.com/450v/bn6a3n/jisr-el-majami-or-jisr-al-mujamieh-ancient-stone-bridge-possibly-of-bn6a3n.jpg",
+      "score": 5.5,
+      "phases": {
+        "gestalt": "artificial, cuadrado, suave al tacto, fresco al tacto",
+        "sensorial": "sólido, muy voluminoso y denso.",
+        "conceptual": "antiguo, construido por el hombre, hogareño"
+      }
     }
   ],
   "high_score_targets": []
