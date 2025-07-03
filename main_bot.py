@@ -42,6 +42,8 @@ from telegram.ext import (
     filters,
 )
 
+from database_manager import NautilusDB
+
 # --- 1. CONFIGURACIÓN INICIAL ---
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -53,6 +55,13 @@ if not TELEGRAM_TOKEN: raise ValueError("TELEGRAM_TOKEN no encontrado.")
 
 CANVAS_URL = "https://pixatrip1984.github.io/nautilus-canvas/"
 DATA_FILE = "nautilus_research_data.json"
+
+# ===== VARIABLES GLOBALES ADICIONALES =====
+# Agregar después de las variables globales existentes:
+
+# Base de datos de rankings
+nautilus_db: Optional[NautilusDB] = None
+session_start_times: Dict[int, datetime] = {}  # Para trackear tiempos de sesión
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
@@ -650,6 +659,8 @@ async def search_duckduckgo_images(query: str, max_results: int = 5) -> List[str
     
     return (has_image_ext or is_trusted_domain) and not has_forbidden
 
+
+
 async def validate_image_content_with_llm(image_url: str) -> bool:
     """
     Valida que el contenido de una imagen sea apropiado usando Mistral Vision.
@@ -704,6 +715,8 @@ Responde ÚNICAMENTE con "APROPIADA" o "RECHAZADA"."""
     except Exception as e:
         logger.error(f"Error validando contenido de imagen: {e}")
         return False  # En caso de error, rechazar por seguridad
+
+
 
 async def select_ethical_target_dynamic() -> Dict[str, str]:
     """
@@ -1054,10 +1067,15 @@ Genera un informe profesional en Markdown siguiendo la estructura estándar de e
         logger.error(f"Error generando análisis profesional con Mistral: {e}")
         return "Error: El servicio de análisis profesional no está disponible."
 
-# --- 9. HANDLERS DE TELEGRAM ---
+# ===== MODIFICAR LA FUNCIÓN start =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
-    user_sessions[user.id] = {"chat_id": update.effective_chat.id, "session_data": {}}
+    user_id = user.id
+    
+    # Guardar tiempo de inicio de sesión
+    session_start_times[user_id] = datetime.now()
+    
+    user_sessions[user_id] = {"chat_id": update.effective_chat.id, "session_data": {}}
     
     # Mensaje inicial del protocolo (usuario lee mientras buscamos objetivo)
     protocol_message = f"""🧠 <b>PROTOCOLO NAUTILUS v3.1</b>
@@ -1208,6 +1226,7 @@ async def fase_4_conceptual(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
     return FINALIZAR
 
+# ===== MODIFICAR LA FUNCIÓN finalizar COMPLETA =====
 async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     if user_id not in user_sessions:
@@ -1257,10 +1276,45 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Extraer puntuación para research
     score = extract_score_from_analysis(session_analysis)
     
-    # Guardar datos de la sesión para investigación
+    # ===== NUEVO: SISTEMA DE RANKING INTEGRADO =====
+    user_pseudonym = get_user_pseudonym(user_id)
+    total_points = 0
+    user_position = "?"
+    
+    try:
+        global nautilus_db
+        if nautilus_db:
+            # Obtener tiempo de inicio de sesión
+            session_start_time = session_start_times.get(user_id)
+            
+            # Guardar sesión en la base de datos con sistema de puntos
+            total_points = await nautilus_db.save_session_to_db(
+                user_id, user_pseudonym, session_data, score, session_start_time
+            )
+            
+            # Obtener posición en el ranking
+            user_position = nautilus_db.get_user_ranking_position(user_pseudonym)
+            
+            # Verificar si es un nuevo récord personal
+            previous_best = nautilus_db.get_user_best_score(user_pseudonym)
+            is_new_record = True
+            if previous_best and len(previous_best) > 0:
+                is_new_record = total_points > previous_best[0]
+            
+            logger.info(f"Usuario {user_pseudonym}: {total_points} puntos, posición #{user_position}")
+            
+    except Exception as e:
+        logger.error(f"Error en sistema de ranking: {e}")
+        total_points = int(score * 100)  # Fallback básico
+    
+    # Limpiar tiempo de sesión
+    if user_id in session_start_times:
+        del session_start_times[user_id]
+    
+    # ===== GUARDAR DATOS PARA INVESTIGACIÓN (MANTENER) =====
     save_session_data(user_id, session_data, score)
     
-    # Enviar revelación del objetivo
+    # ===== ENVIAR REVELACIÓN DEL OBJETIVO =====
     await context.bot.send_photo(
         chat_id=user_id, 
         photo=target_info["url"], 
@@ -1273,7 +1327,7 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         parse_mode='HTML'
     )
     
-    # Enviar análisis profesional con formato limpio
+    # ===== ENVIAR ANÁLISIS PROFESIONAL (MANTENER CÓDIGO EXISTENTE) =====
     if "Error:" in session_analysis:
         await context.bot.send_message(
             chat_id=user_id, 
@@ -1282,10 +1336,8 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
     else:
         try:
-            # Formatear el análisis para Telegram
             formatted_analysis = format_analysis_for_telegram(session_analysis)
             
-            # Dividir en partes si es necesario
             if len(formatted_analysis) > 4000:
                 parts = [formatted_analysis[i:i+4000] for i in range(0, len(formatted_analysis), 4000)]
                 for i, part in enumerate(parts):
@@ -1312,22 +1364,79 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 parse_mode='HTML'
             )
     
-    # Mensaje de cierre con información de investigación
+    # ===== NUEVO: MOSTRAR PUNTUACIÓN Y RANKING =====
+    try:
+        if nautilus_db:
+            # Mensaje de puntuación personal
+            points_message = f"""🎯 <b>TU PUNTUACIÓN TOTAL</b>
+
+🔮 <b>{total_points}</b> puntos obtenidos
+📍 <b>Posición #{user_position}</b> en el ranking global
+
+<b>📊 Desglose de Puntos:</b>
+• Score LLM: <b>{int(score * 100)}</b> pts
+• Bonus Detalles: <b>📡 +{total_points - int(score * 100) - 150}</b> pts  
+• Bonus Tiempo: <b>⏱️ +??</b> pts
+• Bonus Calidad: <b>🎯 +??</b> pts
+
+{'🏆 <b>¡NUEVO RÉCORD PERSONAL!</b>' if is_new_record else '📈 Sigue entrenando para mejorar tu récord'}"""
+
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=points_message,
+                parse_mode='HTML'
+            )
+            
+            # Mostrar ranking actual (top 5)
+            current_rankings = nautilus_db.get_global_ranking(5)
+            if current_rankings:
+                ranking_message = nautilus_db.format_ranking_message(current_rankings, user_pseudonym)
+                
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=ranking_message,
+                    parse_mode='HTML'
+                )
+            
+            # Estadísticas generales
+            stats = nautilus_db.get_ranking_stats()
+            stats_message = f"""📊 <b>ESTADÍSTICAS DEL SISTEMA</b>
+
+🎯 Total de sesiones: <b>{stats['total_sessions']}</b>
+👥 Perceptores únicos: <b>{stats['unique_users']}</b>  
+📈 Promedio de puntos: <b>{stats['average_points']}</b>
+🏆 Récord absoluto: <b>{stats['highest_score']}</b> pts
+
+<i>Cada sesión mejora la comprensión científica de la percepción remota.</i>"""
+            
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=stats_message,
+                parse_mode='HTML'
+            )
+            
+    except Exception as e:
+        logger.error(f"Error mostrando ranking: {e}")
+    
+    # ===== MENSAJE DE CIERRE ACTUALIZADO =====
     pseudonym = get_user_pseudonym(user_id)
     await update.message.reply_html(
         f"🙏 <b>Sesión Completada</b>\n\n"
         f"Gracias por participar, <b>{pseudonym}</b>!\n"
-        f"Tu puntuación: <b>{score:.1f}/10.0</b>\n\n"
-        f"<b>📊 Contribución a la Investigación:</b>\n"
-        f"• Datos guardados de forma anónima\n"
-        f"• Ayudas a identificar patrones en percepción remota\n"
-        f"• Objetivos exitosos se agregan al pool de investigación\n\n"
-        f"<i>Cada sesión nos acerca más a entender este fenómeno.</i>\n\n"
-        f"Para una nueva sesión, envía /start"
+        f"Tu puntuación final: <b>{total_points}</b> puntos\n"
+        f"Posición actual: <b>#{user_position}</b>\n\n"
+        f"<b>🎯 Sistema de Entrenamiento:</b>\n"
+        f"• Compite por mejores posiciones en el ranking\n"
+        f"• Mejora tus técnicas de percepción remota\n"
+        f"• Contribuye a la investigación científica\n\n"
+        f"<i>¡Entrena regularmente para dominar la percepción remota!</i>\n\n"
+        f"Para una nueva sesión, envía /start\n"
+        f"Ver ranking completo: /ranking"
     )
     
     del user_sessions[user_id]
     return ConversationHandler.END
+
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
@@ -1363,59 +1472,94 @@ Es la capacidad de obtener información sobre un objetivo distante usando medios
 """
     await update.message.reply_html(info_text)
 
-async def estadisticas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Muestra estadísticas del sistema y del usuario."""
+# ===== NUEVOS COMANDOS DE RANKING =====
+
+async def ranking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra el ranking global de mejores puntuaciones."""
     try:
-        # Estadísticas generales
-        active_sessions = len(user_sessions)
+        if not nautilus_db:
+            await update.message.reply_text("❌ Sistema de ranking no disponible.")
+            return
+        
         user_pseudonym = get_user_pseudonym(update.effective_user.id)
+        rankings = nautilus_db.get_global_ranking(10)
         
-        # Cargar datos de investigación si existen
-        user_stats = "Sin sesiones previas"
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            # Estadísticas del usuario
-            user_sessions_data = [s for s in data["sessions"] if s["user_pseudonym"] == user_pseudonym]
-            if user_sessions_data:
-                avg_score = sum(s["score"] for s in user_sessions_data) / len(user_sessions_data)
-                best_score = max(s["score"] for s in user_sessions_data)
-                total_sessions = len(user_sessions_data)
-                user_stats = f"Sesiones: {total_sessions} | Promedio: {avg_score:.1f} | Mejor: {best_score:.1f}"
+        if not rankings:
+            await update.message.reply_html("🔮 <b>RANKING NAUTILUS</b>\n\nAún no hay datos de ranking disponibles.\n¡Sé el primero en completar una sesión!")
+            return
         
-        stats_text = f"""
-📊 <b>ESTADÍSTICAS DEL SISTEMA</b>
-
-<b>🤖 Estado del Sistema:</b>
-• Sesiones activas: {active_sessions}
-• Versión: 3.1 (DuckDuckGo Real)
-• IA Local: {'🟢 Activa' if blip_model else '🔴 Inactiva'}
-• IA en la Nube: {'🟢 Activa' if openrouter_client else '🔴 Inactiva'}
-
-<b>👤 Tu Perfil:</b>
-• Pseudónimo: <code>{user_pseudonym}</code>
-• Estadísticas: {user_stats}
-
-<b>🔬 Características:</b>
-✅ Búsqueda dinámica de objetivos
-✅ Análisis inmediato de bocetos  
-✅ Coordenadas profesionales aleatorias
-✅ Sistema de investigación integrado
-✅ Protocolos de seguridad psicológica
-"""
-        await update.message.reply_html(stats_text)
+        ranking_message = nautilus_db.format_ranking_message(rankings, user_pseudonym)
+        
+        # Agregar información personal del usuario
+        user_best = nautilus_db.get_user_best_score(user_pseudonym)
+        user_position = nautilus_db.get_user_ranking_position(user_pseudonym)
+        
+        if user_best:
+            personal_info = f"\n\n🎯 <b>TU MEJOR PUNTUACIÓN</b>\n📍 Posición: #{user_position}\n🔮 Puntos: {user_best[0]}\n🎯 Objetivo: {user_best[5]} - {user_best[6]}"
+            ranking_message += personal_info
+        
+        await update.message.reply_html(ranking_message)
         
     except Exception as e:
-        logger.error(f"Error en estadísticas: {e}")
-        await update.message.reply_text("❌ Error al generar estadísticas.")
+        logger.error(f"Error en comando ranking: {e}")
+        await update.message.reply_text("❌ Error al obtener el ranking.")
 
-# --- 11. CONFIGURACIÓN FINAL DE LA APLICACIÓN ---
+async def mi_ranking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra el historial personal del usuario."""
+    try:
+        if not nautilus_db:
+            await update.message.reply_text("❌ Sistema de ranking no disponible.")
+            return
+        
+        user_pseudonym = get_user_pseudonym(update.effective_user.id)
+        user_best = nautilus_db.get_user_best_score(user_pseudonym)
+        user_position = nautilus_db.get_user_ranking_position(user_pseudonym)
+        
+        if not user_best:
+            await update.message.reply_html(
+                f"👤 <b>TU PERFIL - {user_pseudonym}</b>\n\n"
+                f"🎯 Aún no has completado ninguna sesión.\n"
+                f"¡Envía /start para tu primera aventura de percepción remota!"
+            )
+            return
+        
+        profile_message = f"""👤 <b>TU PERFIL - {user_pseudonym}</b>
+
+🏆 <b>TU MEJOR PUNTUACIÓN</b>
+🔮 <b>{user_best[0]}</b> puntos totales
+📍 Posición global: <b>#{user_position}</b>
+
+<b>📊 Desglose de tu mejor sesión:</b>
+• Score LLM: <b>{int(user_best[1] * 100)}</b> pts
+• Bonus Detalles: <b>📡 {user_best[2]}</b> pts  
+• Bonus Tiempo: <b>⏱️ {user_best[3]}</b> pts
+• Bonus Calidad: <b>🎯 {user_best[4]}</b> pts
+
+🎯 <b>Objetivo:</b> {user_best[5]} - {user_best[6]}
+📅 <b>Fecha:</b> {user_best[7]}
+
+<i>¡Sigue entrenando para superar tu récord!</i>"""
+
+        await update.message.reply_html(profile_message)
+        
+    except Exception as e:
+        logger.error(f"Error en comando mi_ranking: {e}")
+        await update.message.reply_text("❌ Error al obtener tu perfil.")
+
+# ===== MODIFICAR LA FUNCIÓN setup_telegram_application =====
 def setup_telegram_application() -> Application:
-    global telegram_app
+    global telegram_app, nautilus_db
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Conversation handler principal
+    # Inicializar base de datos de rankings
+    try:
+        nautilus_db = NautilusDB(openrouter_client=openrouter_client)
+        logger.info("✅ Sistema de ranking inicializado")
+    except Exception as e:
+        logger.error(f"❌ Error inicializando sistema de ranking: {e}")
+        nautilus_db = None
+    
+    # Conversation handler principal (SIN CAMBIOS)
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -1429,14 +1573,78 @@ def setup_telegram_application() -> Application:
         allow_reentry=True
     )
     
-    # Handlers adicionales
+    # Handlers (AGREGAR NUEVOS COMANDOS)
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("info", info))
     app.add_handler(CommandHandler("estadisticas", estadisticas))
     app.add_handler(CommandHandler("stats", estadisticas))
+    app.add_handler(CommandHandler("ranking", ranking))  # NUEVO
+    app.add_handler(CommandHandler("mi_ranking", mi_ranking))  # NUEVO
+    app.add_handler(CommandHandler("perfil", mi_ranking))  # NUEVO ALIAS
     
     telegram_app = app
     return app
+
+# ===== MODIFICAR LA FUNCIÓN estadisticas =====
+async def estadisticas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra estadísticas del sistema y del usuario."""
+    try:
+        # Estadísticas generales
+        active_sessions = len(user_sessions)
+        user_pseudonym = get_user_pseudonym(update.effective_user.id)
+        
+        # Estadísticas de ranking si está disponible
+        ranking_stats = ""
+        if nautilus_db:
+            stats = nautilus_db.get_ranking_stats()
+            user_best = nautilus_db.get_user_best_score(user_pseudonym)
+            user_position = nautilus_db.get_user_ranking_position(user_pseudonym)
+            
+            if user_best:
+                ranking_stats = f"""
+<b>🏆 Tu Rendimiento:</b>
+• Mejor puntuación: {user_best[0]} pts
+• Posición actual: #{user_position}
+• Último objetivo: {user_best[6]}
+
+<b>📊 Estadísticas Globales:</b>
+• Total sesiones: {stats['total_sessions']}
+• Perceptores únicos: {stats['unique_users']}
+• Promedio de puntos: {stats['average_points']}
+• Récord absoluto: {stats['highest_score']} pts"""
+            else:
+                ranking_stats = f"""
+<b>📊 Estadísticas Globales:</b>
+• Total sesiones: {stats['total_sessions']}
+• Perceptores únicos: {stats['unique_users']}
+• Promedio de puntos: {stats['average_points']}
+• Récord absoluto: {stats['highest_score']} pts
+• Tu estado: Sin sesiones completadas"""
+        
+        stats_text = f"""📊 <b>ESTADÍSTICAS DEL SISTEMA</b>
+
+<b>🤖 Estado del Sistema:</b>
+• Sesiones activas: {active_sessions}
+• Versión: 3.2 (Sistema de Ranking)
+• IA Local: {'🟢 Activa' if blip_model else '🔴 Inactiva'}
+• IA en la Nube: {'🟢 Activa' if openrouter_client else '🔴 Inactiva'}
+• Sistema Ranking: {'🟢 Activo' if nautilus_db else '🔴 Inactivo'}
+
+<b>👤 Tu Perfil:</b>
+• Pseudónimo: <code>{user_pseudonym}</code>{ranking_stats}
+
+<b>🔬 Características v3.2:</b>
+✅ Sistema de puntuación extendida
+✅ Rankings competitivos en tiempo real
+✅ Bonificaciones por calidad y detalles
+✅ Seguimiento de progreso personal
+✅ Búsqueda dinámica de objetivos éticos"""
+        
+        await update.message.reply_html(stats_text)
+        
+    except Exception as e:
+        logger.error(f"Error en estadísticas: {e}")
+        await update.message.reply_text("❌ Error al generar estadísticas.")
 
 async def run_services():
     """Ejecuta todos los servicios de manera concurrente."""

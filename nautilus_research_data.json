@@ -25,6 +25,45 @@
         "sensorial": "grande, se repite, estructural",
         "conceptual": "ancestral, prehispanico, construido por el hombre"
       }
+    },
+    {
+      "timestamp": "2025-07-03T14:40:55.266290",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "391726",
+      "target_name": "Traditional Wooden Temple",
+      "target_url": "https://images.unsplash.com/photo-1546949604-970c327ed625?q=80&w=1632&auto=format&fit=crop",
+      "score": 5.0,
+      "phases": {
+        "gestalt": "eee",
+        "sensorial": "eee",
+        "conceptual": "ee"
+      }
+    },
+    {
+      "timestamp": "2025-07-03T15:06:54.484459",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "5540-K4",
+      "target_name": "Serene Mountain Lake",
+      "target_url": "https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=800&h=600&fit=crop",
+      "score": 5.0,
+      "phases": {
+        "gestalt": "Frio, viento fuerte",
+        "sensorial": "tonalidades blancas con celeste, superficie blanda sobre algo firme,  denso y voluminoso",
+        "conceptual": "Altura y energía de conquista, sensación de elevación, propósito de admiración"
+      }
+    },
+    {
+      "timestamp": "2025-07-03T15:12:57.822251",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "8554-96315",
+      "target_name": "Quiet Colonial Spanish",
+      "target_url": "https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&h=600&fit=crop",
+      "score": 5.5,
+      "phases": {
+        "gestalt": "Colonial, imperio, poder autoritario",
+        "sensorial": "obra humana, ingeniería, elegancia, firme y sólido, edificación voluminosa",
+        "conceptual": "función de residir dentro, energía de alta responsabilidad, emoción de conquista"
+      }
     }
   ],
   "high_score_targets": []

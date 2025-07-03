@@ -45,3 +45,11 @@ lxml
 
 # Librería especializada para búsquedas en DuckDuckGo (método principal)
 duckduckgo-search
+
+# === Dependencias para Sistema de Ranking ===
+
+# SQLite viene incluido con Python (no necesita instalación adicional)
+# Nota: sqlite3 es parte de la librería estándar de Python
+
+# Para manejo avanzado de fechas (si no está ya instalado)
+python-dateutil
