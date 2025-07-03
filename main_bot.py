@@ -1,8 +1,8 @@
 # main_bot.py
 
 # ==============================================================================
-#                      PROTOCOLO NAUTILUS - TELEGRAM BOT v2.5
-#                         (Versión Estable y Corregida)
+#                      PROTOCOLO NAUTILUS - TELEGRAM BOT v2.6
+#                    (Coordenadas Consistentes y Mejorado)
 # ==============================================================================
 
 import os
@@ -70,7 +70,7 @@ else:
 blip_processor: Optional[BlipProcessor] = None
 blip_model: Optional[BlipForConditionalGeneration] = None
 BLIP_MODEL_ID = "Salesforce/blip-image-captioning-base"
-MISTRAL_CLOUD_MODEL_ID = "mistralai/mistral-small-3.2-24b-instruct:free" # Usamos el alias que sabemos que funciona
+MISTRAL_CLOUD_MODEL_ID = "mistralai/mistral-small-3.2-24b-instruct:free"
 
 def initialize_blip_model():
     global blip_processor, blip_model
@@ -88,6 +88,7 @@ def initialize_blip_model():
 class DrawingSubmission(BaseModel):
     imageData: str
     userId: int
+    targetCoordinates: Optional[str] = None  # Nueva: coordenadas del objetivo
 
 class APIResponse(BaseModel):
     status: str
@@ -103,32 +104,64 @@ TARGET_POOL = [
 ]
 
 # --- 4. SERVIDOR API (FastAPI) ---
-app_fastapi = FastAPI(title="Protocolo Nautilus API", version="2.5.0")
+app_fastapi = FastAPI(title="Protocolo Nautilus API", version="2.6.0")
 app_fastapi.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app_fastapi.post("/submit_drawing", response_model=APIResponse)
 async def submit_drawing(submission: DrawingSubmission):
     user_id = submission.userId
-    logger.info(f"Recibiendo dibujo de usuario {user_id}")
-    if not telegram_app: raise HTTPException(status_code=503, detail="Servicio Telegram no inicializado")
-    if user_id not in user_sessions: raise HTTPException(status_code=404, detail="No hay sesión activa")
+    logger.info(f"Recibiendo dibujo de usuario {user_id} con coordenadas: {submission.targetCoordinates}")
+    
+    if not telegram_app: 
+        raise HTTPException(status_code=503, detail="Servicio Telegram no inicializado")
+    if user_id not in user_sessions: 
+        raise HTTPException(status_code=404, detail="No hay sesión activa")
+    
     chat_id = user_sessions[user_id].get("chat_id")
-    if not chat_id: raise HTTPException(status_code=404, detail="No se encontró chat_id")
+    if not chat_id: 
+        raise HTTPException(status_code=404, detail="No se encontró chat_id")
+    
     try:
         header, encoded = submission.imageData.split(",", 1)
         image_data = base64.b64decode(encoded)
-        if not image_data: raise ValueError("Imagen vacía")
+        if not image_data: 
+            raise ValueError("Imagen vacía")
+        
+        # Guardamos la imagen y comenzamos el análisis inmediatamente
         user_sessions[user_id]["session_data"]["fase3_boceto_bytes"] = image_data
-        await telegram_app.bot.send_photo(chat_id=chat_id, photo=image_data, caption="🎨 <b>Boceto recibido</b>", parse_mode='HTML')
-        await telegram_app.bot.send_message(chat_id=chat_id, text="¡Excelente!\n\n<b>FASE 4: CONCEPTUAL</b>\nDescribe las cualidades intangibles y conceptos abstractos.", parse_mode='HTML')
+        
+        # NUEVO: Análisis inmediato del boceto para ahorrar tiempo
+        logger.info(f"Iniciando análisis inmediato del boceto para usuario {user_id}")
+        sketch_desc = await describe_sketch_with_mistral(image_data)
+        user_sessions[user_id]["session_data"]["sketch_description"] = sketch_desc
+        logger.info(f"Análisis del boceto completado para usuario {user_id}")
+        
+        # Obtener las coordenadas del objetivo de la sesión
+        target_ref = user_sessions[user_id]["session_data"].get("target_ref", "PN-????-?")
+        
+        await telegram_app.bot.send_photo(
+            chat_id=chat_id, 
+            photo=image_data, 
+            caption="🎨 <b>Boceto recibido</b>", 
+            parse_mode='HTML'
+        )
+        
+        await telegram_app.bot.send_message(
+            chat_id=chat_id, 
+            text=f"¡Excelente!\n\n<b>FASE 4: CONCEPTUAL</b>\n<b>Tu objetivo es:</b> <code>{target_ref}</code>\n\nDescribe las cualidades intangibles y conceptos abstractos.", 
+            parse_mode='HTML'
+        )
+        
         return APIResponse(status="ok")
+        
     except Exception as e:
         logger.error(f"Error en submit_drawing para {user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 5. FUNCIONES DE IA ESPECIALIZADAS ---
 def describe_objective_with_blip(image_bytes: bytes) -> str:
-    if not blip_model: return "Modelo de visión local no disponible."
+    if not blip_model: 
+        return "Modelo de visión local no disponible."
     try:
         logger.info("Describiendo OBJETIVO con BLIP local...")
         raw_image = Image.open(BytesIO(image_bytes)).convert('RGB')
@@ -142,28 +175,105 @@ def describe_objective_with_blip(image_bytes: bytes) -> str:
         return "Error al procesar la imagen objetivo."
 
 async def describe_sketch_with_mistral(image_bytes: bytes) -> str:
-    if not openrouter_client: return "Modelo de visión en la nube no disponible."
+    if not openrouter_client: 
+        return "Modelo de visión en la nube no disponible."
     try:
         logger.info("Describiendo BOCETO con Mistral en la nube...")
         b64_image = base64.b64encode(image_bytes).decode('utf-8')
-        prompt_text = "Describe este boceto de manera objetiva y literal. Enfócate en las formas, las líneas y la composición. Sé conciso."
-        response = await asyncio.to_thread(openrouter_client.chat.completions.create, model=MISTRAL_CLOUD_MODEL_ID, messages=[{"role": "user", "content": [{"type": "text", "text": prompt_text}, {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_image}"}}]}])
+        prompt_text = "Describe este boceto de manera objetiva y literal. Enfócate en las formas, las líneas y la composición. Sé conciso pero detallado."
+        
+        response = await asyncio.to_thread(
+            openrouter_client.chat.completions.create, 
+            model=MISTRAL_CLOUD_MODEL_ID, 
+            messages=[{
+                "role": "user", 
+                "content": [
+                    {"type": "text", "text": prompt_text}, 
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_image}"}}
+                ]
+            }],
+            temperature=0.3,
+            max_tokens=500
+        )
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"Error al describir BOCETO con Mistral: {e}")
         return "Error al procesar el boceto."
 
-async def get_text_analysis_with_mistral(user_transcript: str, target_desc: str, sketch_desc: str) -> str:
-    if not openrouter_client: return "Análisis de texto no disponible."
-    logger.info("Generando análisis de texto con Mistral...")
-    system_prompt = "Eres un 'Analista de Protocolo Nautilus', un experto imparcial en evaluar sesiones de Visión Remota. Tu tono es alentador pero riguroso."
-    user_prompt = f"""Analiza la siguiente sesión. Compara 3 piezas de texto: la transcripción, la descripción del boceto y la descripción del objetivo.
-**1. TRANSCRIPCIÓN DEL VIDENTE:**\n---\n{user_transcript}\n---
-**2. DESCRIPCIÓN DEL BOCETO (IA):**\n---\n{sketch_desc}\n---
-**3. DESCRIPCIÓN DEL OBJETIVO (IA):**\n---\n{target_desc}\n---
-**INSTRUCCIONES:** Crea un informe en Markdown con: Resumen General, Correlaciones Directas (Texto y Boceto), Correlaciones Conceptuales, Discrepancias Notables, y Puntuación de Precisión (1.0-10.0) con justificación."""
+async def get_text_analysis_with_mistral(user_transcript: str, target_desc: str, sketch_desc: str, target_name: str) -> str:
+    if not openrouter_client: 
+        return "Análisis de texto no disponible."
+    
+    logger.info("Generando análisis completo con Mistral...")
+    
+    system_prompt = """Eres un 'Analista de Protocolo Nautilus', un experto imparcial en evaluar sesiones de Visión Remota. 
+Tu tono es alentador pero riguroso. Proporciona análisis detallados y constructivos."""
+    
+    user_prompt = f"""Analiza esta sesión de Visión Remota comparando las siguientes descripciones:
+
+**OBJETIVO REAL:** {target_name}
+
+**1. TRANSCRIPCIÓN DEL VIDENTE:**
+---
+{user_transcript}
+---
+
+**2. DESCRIPCIÓN DETALLADA DEL BOCETO (IA Mistral):**
+---
+{sketch_desc}
+---
+
+**3. DESCRIPCIÓN DEL OBJETIVO REAL (IA BLIP):**
+---
+{target_desc}
+---
+
+**INSTRUCCIONES:** 
+Crea un informe completo en Markdown con las siguientes secciones:
+
+## 📊 Resumen Ejecutivo
+- Evaluación general de la sesión
+- Precisión estimada y justificación
+
+## 🎨 Análisis Detallado del Boceto
+- Descripción completa de lo que la IA detectó en el dibujo
+- Elementos visuales identificados
+- Composición y características técnicas
+
+## 🔍 Correlaciones Directas
+- Elementos específicos que coinciden entre boceto, transcripción y objetivo
+- Detalles exactos que se alinearon
+
+## 🧠 Correlaciones Conceptuales
+- Conceptos abstractos o temáticos que coinciden
+- Impresiones sensoriales acertadas
+
+## 🎯 Elementos Únicos del Boceto
+- Detalles específicos que aparecen solo en el dibujo
+- Interpretación de estos elementos únicos
+
+## ⚠️ Discrepancias Notables
+- Elementos que no coinciden
+- Posibles explicaciones o interpretaciones alternativas
+
+## 📈 Puntuación de Precisión
+- Escala: 1.0 (sin correlación) - 10.0 (correlación perfecta)
+- Justificación detallada de la puntuación
+- Sugerencias para futuras sesiones
+
+Sé específico, constructivo y profesional."""
+
     try:
-        response = await asyncio.to_thread(openrouter_client.chat.completions.create, model=MISTRAL_CLOUD_MODEL_ID, messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}], temperature=0.4, max_tokens=2048)
+        response = await asyncio.to_thread(
+            openrouter_client.chat.completions.create, 
+            model=MISTRAL_CLOUD_MODEL_ID, 
+            messages=[
+                {"role": "system", "content": system_prompt}, 
+                {"role": "user", "content": user_prompt}
+            ], 
+            temperature=0.4, 
+            max_tokens=2500
+        )
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"Error generando análisis de texto con Mistral: {e}")
@@ -173,28 +283,71 @@ async def get_text_analysis_with_mistral(user_transcript: str, target_desc: str,
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     user_sessions[user.id] = {"chat_id": update.effective_chat.id, "session_data": {}}
+    
+    # Seleccionar objetivo y generar coordenadas CONSISTENTES
     selected_target = random.choice(TARGET_POOL)
-    user_sessions[user.id]["session_data"]["target"] = selected_target
     target_ref = f"PN-{random.randint(1000, 9999)}-{random.choice('WXYZ')}"
-    logger.info(f"Usuario {user.id} ({user.first_name}) inició sesión. Objetivo: {selected_target['name']}")
-    await update.message.reply_html(f"Hola {user.mention_html()}.\nBienvenido al <b>Protocolo Nautilus v2.5</b>.\n\nTu objetivo es: <code>{target_ref}</code>\n\n<b>FASE 1: GESTALT</b>\nDescribe tus impresiones primarias.")
+    
+    # Guardar TANTO el objetivo como las coordenadas en la sesión
+    user_sessions[user.id]["session_data"]["target"] = selected_target
+    user_sessions[user.id]["session_data"]["target_ref"] = target_ref
+    
+    logger.info(f"Usuario {user.id} ({user.first_name}) inició sesión. Objetivo: {selected_target['name']}, Coordenadas: {target_ref}")
+    
+    await update.message.reply_html(
+        f"Hola {user.mention_html()}.\nBienvenido al <b>Protocolo Nautilus v2.6</b>.\n\n"
+        f"<b>Tu objetivo es:</b> <code>{target_ref}</code>\n\n"
+        f"<b>FASE 1: GESTALT</b>\nDescribe tus impresiones primarias."
+    )
     return FASE_1_GESTALT
 
 async def fase_1_gestalt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_sessions[update.effective_user.id]["session_data"]["fase1"] = update.message.text
-    await update.message.reply_html("✅ Fase 1 registrada.\n\n<b>FASE 2: DATOS SENSORIALES</b>\nDescribe colores, texturas, sonidos, etc.")
+    user_id = update.effective_user.id
+    target_ref = user_sessions[user_id]["session_data"]["target_ref"]
+    
+    user_sessions[user_id]["session_data"]["fase1"] = update.message.text
+    
+    await update.message.reply_html(
+        f"✅ Fase 1 registrada.\n\n"
+        f"<b>FASE 2: DATOS SENSORIALES</b>\n"
+        f"<b>Tu objetivo es:</b> <code>{target_ref}</code>\n\n"
+        f"Describe colores, texturas, sonidos, etc."
+    )
     return FASE_2_SENSORIAL
 
 async def fase_2_sensorial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_sessions[update.effective_user.id]["session_data"]["fase2"] = update.message.text
-    keyboard = [[InlineKeyboardButton("🎨 Abrir Lienzo Nautilus", web_app=WebAppInfo(url=CANVAS_URL))]]
+    user_id = update.effective_user.id
+    target_ref = user_sessions[user_id]["session_data"]["target_ref"]
+    
+    user_sessions[user_id]["session_data"]["fase2"] = update.message.text
+    
+    # Crear URL del WebApp con las coordenadas como parámetro
+    webapp_url = f"{CANVAS_URL}?target={target_ref}"
+    
+    keyboard = [[InlineKeyboardButton("🎨 Abrir Lienzo Nautilus", web_app=WebAppInfo(url=webapp_url))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_html("✅ Datos sensoriales registrados.\n\n<b>FASE 3: BOCETO</b>\nPresiona el botón para dibujar.", reply_markup=reply_markup)
+    
+    await update.message.reply_html(
+        f"✅ Datos sensoriales registrados.\n\n"
+        f"<b>FASE 3: BOCETO</b>\n"
+        f"<b>Tu objetivo es:</b> <code>{target_ref}</code>\n\n"
+        f"Presiona el botón para dibujar.", 
+        reply_markup=reply_markup
+    )
     return FASE_3_BOCETO
 
 async def fase_4_conceptual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_sessions[update.effective_user.id]["session_data"]["fase4"] = update.message.text
-    await update.message.reply_html("✅ Fase 4 registrada.\n\n🎯 <b>Sesión completa</b>\n¿Listo? Envía /finalizar.")
+    user_id = update.effective_user.id
+    target_ref = user_sessions[user_id]["session_data"]["target_ref"]
+    
+    user_sessions[user_id]["session_data"]["fase4"] = update.message.text
+    
+    await update.message.reply_html(
+        f"✅ Fase 4 registrada.\n\n"
+        f"🎯 <b>Sesión completa</b>\n"
+        f"<b>Tu objetivo fue:</b> <code>{target_ref}</code>\n\n"
+        f"¿Listo para ver los resultados? Envía /finalizar."
+    )
     return FINALIZAR
 
 async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -202,17 +355,27 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if user_id not in user_sessions:
         await update.message.reply_text("❌ No se encontró una sesión activa. Por favor, /start.")
         return ConversationHandler.END
+    
     await update.message.reply_text("⏳ Finalizando... Contactando IAs Local y en la Nube...")
     
     session_data = user_sessions[user_id].get("session_data", {})
     target_info = session_data.get("target")
+    target_ref = session_data.get("target_ref", "PN-????-?")
+    
     if not target_info:
         await update.message.reply_text("❌ Error al recuperar objetivo. Por favor, /start.")
         return ConversationHandler.END
 
-    logger.info(f"Usuario {user_id} finalizó. Objetivo: {target_info['name']}.")
-    user_transcript = (f"Fase 1: {session_data.get('fase1', 'N/A')}\nFase 2: {session_data.get('fase2', 'N/A')}\nFase 4: {session_data.get('fase4', 'N/A')}")
+    logger.info(f"Usuario {user_id} finalizó. Objetivo: {target_info['name']}, Coordenadas: {target_ref}")
     
+    # Crear transcripción del usuario
+    user_transcript = (
+        f"Fase 1 (Gestalt): {session_data.get('fase1', 'N/A')}\n"
+        f"Fase 2 (Sensorial): {session_data.get('fase2', 'N/A')}\n"
+        f"Fase 4 (Conceptual): {session_data.get('fase4', 'N/A')}"
+    )
+    
+    # Describir objetivo con BLIP
     try:
         response = requests.get(target_info["url"], timeout=10)
         response.raise_for_status()
@@ -221,26 +384,47 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         logger.error(f"No se pudo descargar/describir el objetivo: {e}")
         target_desc = "Error al procesar la imagen objetivo."
 
-    user_drawing_bytes = session_data.get("fase3_boceto_bytes")
-    sketch_desc = "El usuario no proporcionó un boceto."
-    if user_drawing_bytes:
-        sketch_desc = await describe_sketch_with_mistral(user_drawing_bytes)
+    # Obtener descripción del boceto (ya analizada o analizarla ahora)
+    sketch_desc = session_data.get("sketch_description", "El usuario no proporcionó un boceto.")
+    if sketch_desc == "El usuario no proporcionó un boceto.":
+        user_drawing_bytes = session_data.get("fase3_boceto_bytes")
+        if user_drawing_bytes:
+            sketch_desc = await describe_sketch_with_mistral(user_drawing_bytes)
 
-    session_analysis = await get_text_analysis_with_mistral(user_transcript, target_desc, sketch_desc)
+    # Generar análisis completo
+    session_analysis = await get_text_analysis_with_mistral(
+        user_transcript, target_desc, sketch_desc, target_info['name']
+    )
     
-    await context.bot.send_photo(chat_id=user_id, photo=target_info["url"], caption=f"🎯 <b>El objetivo era:</b>\n{target_info['name']}", parse_mode='HTML')
+    # Enviar resultados
+    await context.bot.send_photo(
+        chat_id=user_id, 
+        photo=target_info["url"], 
+        caption=f"🎯 <b>El objetivo era:</b>\n{target_info['name']}\n<b>Coordenadas:</b> <code>{target_ref}</code>", 
+        parse_mode='HTML'
+    )
+    
     if "Error:" in session_analysis:
-        await context.bot.send_message(chat_id=user_id, text=f"⚠️ No se pudo generar el análisis automático.\n{session_analysis}", parse_mode='HTML')
+        await context.bot.send_message(
+            chat_id=user_id, 
+            text=f"⚠️ No se pudo generar el análisis automático.\n{session_analysis}", 
+            parse_mode='HTML'
+        )
     else:
         await context.bot.send_message(chat_id=user_id, text=session_analysis, parse_mode='Markdown')
     
-    await update.message.reply_html("🙏 <b>¡Gracias por participar!</b>\nPara una nueva sesión, envía /start.")
+    await update.message.reply_html(
+        f"🙏 <b>¡Gracias por participar!</b>\n"
+        f"Para una nueva sesión, envía /start."
+    )
+    
     del user_sessions[user_id]
     return ConversationHandler.END
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    if user_id in user_sessions: del user_sessions[user_id]
+    if user_id in user_sessions: 
+        del user_sessions[user_id]
     await update.message.reply_text("❌ Sesión cancelada. Envía /start para empezar de nuevo.")
     return ConversationHandler.END
 
@@ -280,7 +464,7 @@ async def run_services():
         await app.shutdown()
 
 def main():
-    logger.info("🚀 Iniciando Protocolo Nautilus v2.5 (Estable)...")
+    logger.info("🚀 Iniciando Protocolo Nautilus v2.6 (Coordenadas Consistentes)...")
     try:
         asyncio.run(run_services())
     except KeyboardInterrupt:

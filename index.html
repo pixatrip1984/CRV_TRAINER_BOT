@@ -214,31 +214,44 @@ document.addEventListener("DOMContentLoaded", () => {
         // --- OBTENER COORDENADAS DEL OBJETIVO ---
         function extractTargetCoordinates() {
             try {
-                // Intentamos obtener las coordenadas desde los parámetros de inicio
+                // Método 1: Desde parámetros URL (método principal)
+                const urlParams = new URLSearchParams(window.location.search);
+                const targetParam = urlParams.get('target');
+                if (targetParam) {
+                    console.log('Coordenadas extraídas desde URL:', targetParam);
+                    return targetParam;
+                }
+                
+                // Método 2: Desde initDataUnsafe (fallback)
                 const startParam = tg.initDataUnsafe?.start_parameter;
                 if (startParam) {
-                    // El formato esperado es: "target_CODIGO"
                     if (startParam.startsWith('target_')) {
-                        const coordinates = startParam.substring(7); // Remover "target_"
+                        const coordinates = startParam.substring(7);
+                        console.log('Coordenadas extraídas desde start_parameter:', coordinates);
                         return coordinates;
                     }
                 }
                 
-                // Fallback: intentamos desde initData
+                // Método 3: Desde initData (fallback adicional)
                 if (tg.initData) {
-                    const urlParams = new URLSearchParams(tg.initData);
-                    const startParam = urlParams.get('start_parameter');
+                    const initParams = new URLSearchParams(tg.initData);
+                    const startParam = initParams.get('start_parameter');
                     if (startParam && startParam.startsWith('target_')) {
-                        return startParam.substring(7);
+                        const coordinates = startParam.substring(7);
+                        console.log('Coordenadas extraídas desde initData:', coordinates);
+                        return coordinates;
                     }
                 }
                 
-                // Último fallback: generar coordenadas temporales
-                return `PN-${Math.floor(Math.random() * 9000) + 1000}-${['W','X','Y','Z'][Math.floor(Math.random() * 4)]}`;
+                // Último fallback: coordenadas de prueba
+                const fallbackCoords = `PN-${Math.floor(Math.random() * 9000) + 1000}-${['W','X','Y','Z'][Math.floor(Math.random() * 4)]}`;
+                console.log('Usando coordenadas fallback:', fallbackCoords);
+                return fallbackCoords;
                 
             } catch (error) {
                 console.error('Error extrayendo coordenadas:', error);
-                return `PN-${Math.floor(Math.random() * 9000) + 1000}-${['W','X','Y','Z'][Math.floor(Math.random() * 4)]}`;
+                const errorCoords = `PN-${Math.floor(Math.random() * 9000) + 1000}-${['W','X','Y','Z'][Math.floor(Math.random() * 4)]}`;
+                return errorCoords;
             }
         }
 
