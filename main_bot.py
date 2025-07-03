@@ -631,9 +631,299 @@ async def select_ethical_target_dynamic() -> Dict[str, str]:
     logger.warning("Todos los intentos fallaron, usando objetivo de emergencia")
     return get_fallback_target()
 
-# --- 8. FUNCIONES DE FORMATEO ---
+# === SISTEMA DE ANÁLISIS PERCEPTUAL MEJORADO ===
+# Agregar estas funciones al main_bot.py
+
+async def analyze_target_with_mistral(image_bytes: bytes) -> Dict[str, Any]:
+    """
+    El LLM realiza un protocolo completo de percepción remota viendo la imagen objetivo.
+    Esto genera datos esperables para comparar con las percepciones del usuario.
+    """
+    if not openrouter_client:
+        return {"error": "Modelo de análisis en la nube no disponible"}
+    
+    try:
+        logger.info("Realizando análisis perceptual completo con Mistral...")
+        b64_image = base64.b64encode(image_bytes).decode('utf-8')
+        
+        analysis_prompt = """Actúa como un EXPERTO EN PERCEPCIÓN REMOTA con 20 años de experiencia. 
+
+Tu tarea es analizar esta imagen como si fueras un perceptor experimentado realizando el protocolo completo de 4 fases. Debes generar DATOS PERCEPTUALES ESPERABLES que un vidente competente podría captar del objetivo.
+
+**IMPORTANTE:** No describas solo lo que ves visualmente. Infiere y deduce sensaciones, impresiones y datos sutiles que se derivarían lógicamente del entorno y contexto.
+
+**FASE 1 - DATOS GESTALT (Impresiones Primitivas):**
+• Sensaciones táctiles esperables basadas en materiales y entorno
+• Impresiones dimensionales deducibles de la escala y proporciones
+• Datos primitivos de forma y estructura
+• Sensaciones de densidad y masa aparente
+
+**FASE 2 - DATOS SENSORIALES (Información Específica):**
+• Colores dominantes y tonalidades presentes
+• Texturas de superficie lógicas según materiales
+• Sonidos ambientales esperables del entorno
+• Sensaciones térmicas basadas en contexto (agua, sombra, materiales)
+• Impresiones de humedad/sequedad según el ambiente
+• Sensaciones de movimiento o estatismo
+
+**FASE 4 - DATOS CONCEPTUALES (Información Abstracta):**
+• Emociones que evoca el lugar (tranquilidad, grandeza, misterio)
+• Propósito funcional o histórico del sitio
+• Atmósfera y energía del lugar
+• Significado simbólico o cultural
+• Contexto temporal (antiguo/moderno)
+• Sensación de actividad humana (habitado/abandonado)
+
+**ANÁLISIS CONTEXTUAL ADICIONAL:**
+• Factores ambientales que influirían en las sensaciones
+• Elementos que podrían generar impresiones específicas
+• Detalles sutiles que un perceptor experimentado captaría
+
+Responde en formato JSON con la siguiente estructura:
+{
+  "gestalt": {
+    "tactiles": ["sensación1", "sensación2"],
+    "dimensionales": ["impresión1", "impresión2"],
+    "estructurales": ["dato1", "dato2"],
+    "densidad_masa": "descripción"
+  },
+  "sensoriales": {
+    "colores": ["color1", "color2"],
+    "texturas": ["textura1", "textura2"],
+    "sonidos": ["sonido1", "sonido2"],
+    "termicas": ["sensación1", "sensación2"],
+    "humedad": "descripción",
+    "movimiento": "descripción"
+  },
+  "conceptuales": {
+    "emocionales": ["emoción1", "emoción2"],
+    "funcional": "propósito",
+    "atmosfera": "descripción",
+    "simbolico": "significado",
+    "temporal": "contexto",
+    "actividad": "descripción"
+  },
+  "contextual": {
+    "factores_ambientales": ["factor1", "factor2"],
+    "impresiones_sutiles": ["impresión1", "impresión2"],
+    "elementos_clave": ["elemento1", "elemento2"]
+  }
+}"""
+
+        response = await asyncio.to_thread(
+            openrouter_client.chat.completions.create,
+            model=MISTRAL_CLOUD_MODEL_ID,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": analysis_prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}}
+                ]
+            }],
+            temperature=0.3,
+            max_tokens=2000
+        )
+        
+        # Parsear respuesta JSON
+        response_text = response.choices[0].message.content.strip()
+        
+        # Limpiar respuesta si tiene markdown
+        if response_text.startswith("```json"):
+            response_text = response_text.replace("```json", "").replace("```", "").strip()
+        
+        perceptual_data = json.loads(response_text)
+        logger.info("✅ Análisis perceptual completo generado")
+        
+        return perceptual_data
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parseando respuesta JSON del análisis: {e}")
+        return {"error": "Error en formato de respuesta del análisis"}
+    except Exception as e:
+        logger.error(f"Error en análisis perceptual con Mistral: {e}")
+        return {"error": f"Error en análisis: {str(e)}"}
+
+async def get_enhanced_professional_analysis(user_transcript: str, target_perceptual_data: Dict, 
+                                           sketch_desc: str, target_name: str, coordinates: str) -> str:
+    """
+    Genera análisis profesional mejorado comparando datos del usuario vs datos esperables del objetivo.
+    """
+    if not openrouter_client:
+        return "Análisis de texto no disponible."
+    
+    logger.info("Generando análisis profesional mejorado con comparación perceptual...")
+    
+    system_prompt = """Eres un Analista Senior de Percepción Remota con experiencia en protocolos científicos estándar y evaluación perceptual avanzada.
+
+Tu evaluación debe ser profesional, constructiva y basada en criterios establecidos de correlación perceptual. Debes evaluar no solo coincidencias literales, sino capacidades perceptuales reales.
+
+IMPORTANTE: Tienes acceso a datos perceptuales esperables generados por análisis experto del objetivo. Usa esto para evaluar si el perceptor captó sensaciones, impresiones y datos que DEBERÍAN haberse percibido del entorno."""
+    
+    # Convertir datos perceptuales a texto legible
+    perceptual_summary = format_perceptual_data_for_analysis(target_perceptual_data)
+    
+    user_prompt = f"""ANÁLISIS AVANZADO DE SESIÓN DE PERCEPCIÓN REMOTA
+
+**COORDENADAS DEL OBJETIVO:** {coordinates}
+**OBJETIVO REAL:** {target_name}
+
+**DATOS DEL PERCEPTOR:**
+---
+{user_transcript}
+---
+
+**ANÁLISIS DEL BOCETO:**
+---
+{sketch_desc}
+---
+
+**DATOS PERCEPTUALES ESPERABLES DEL OBJETIVO:**
+---
+{perceptual_summary}
+---
+
+**INSTRUCCIONES PARA ANÁLISIS MEJORADO:**
+
+Genera un informe profesional evaluando CAPACIDADES PERCEPTUALES REALES:
+
+## 📋 Resumen Ejecutivo
+- Evaluación de precisión perceptual vs datos esperables
+- Análisis de capacidades demostradas
+- Puntuación preliminar y justificación
+
+## 🎯 Análisis de Correspondencias Perceptuales
+
+### Correspondencias Directas (Datos Captados Correctamente)
+- Sensaciones táctiles que coinciden con el entorno
+- Impresiones dimensionales acertadas
+- Datos sensoriales lógicos captados
+- Elementos conceptuales coherentes con el objetivo
+
+### Correspondencias Inferidas (Capacidad Deductiva)
+- Sensaciones derivadas lógicamente del entorno que el perceptor captó
+- Impresiones contextualmente apropiadas
+- Datos sutiles que requieren experiencia perceptual
+
+### Correspondencias Abstractas (Percepción Avanzada)
+- Captación de atmósfera y energía del lugar
+- Percepción de propósito o función
+- Datos conceptuales y emocionales apropiados
+
+## 🧠 Evaluación de Capacidades Perceptuales
+
+### Capacidades Demostradas
+- Tipos de percepción exitosa (táctil, dimensional, emocional)
+- Nivel de precisión en diferentes categorías
+- Indicadores de experiencia perceptual
+
+### Oportunidades de Desarrollo
+- Áreas sensoriales no exploradas adecuadamente
+- Tipos de datos que podrían mejorarse
+- Técnicas para fortalecer capacidades específicas
+
+## 📊 Análisis del Boceto vs Realidad Perceptual
+- Traducción visual de impresiones percibidas
+- Coherencia entre descripciones verbales y representación gráfica
+- Elementos únicos captados solo en el boceto
+
+## ⚠️ Análisis de Desviaciones
+- Datos que no corresponden al objetivo (ruido vs. información válida)
+- Posibles interpretaciones alternativas
+- Factores que podrían haber influido en las percepciones
+
+## 📈 Evaluación Cuantitativa Mejorada
+**Criterios de Evaluación:**
+- **Precisión Sensorial (30%):** Captación de datos táctiles, térmicos, texturales
+- **Precisión Dimensional (25%):** Percepción de escala, proporciones, estructura
+- **Precisión Conceptual (25%):** Atmósfera, propósito, contexto temporal
+- **Capacidad Inferencial (20%):** Deducción de datos lógicos del entorno
+
+**Puntuación Final:** [X.X/10.0]
+
+## 💡 Retroalimentación Específica para Desarrollo
+- Fortalezas perceptuales identificadas
+- Técnicas específicas para mejorar áreas débiles
+- Ejercicios recomendados para el siguiente nivel
+- Patrones de mejora observados
+
+**NOTA:** Evalúa capacidades perceptuales reales, no solo coincidencias superficiales. Un perceptor competente debería captar sensaciones lógicamente derivables del entorno objetivo."""
+
+    try:
+        response = await asyncio.to_thread(
+            openrouter_client.chat.completions.create,
+            model=MISTRAL_CLOUD_MODEL_ID,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=4000
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"Error generando análisis profesional mejorado: {e}")
+        return "Error: El servicio de análisis profesional mejorado no está disponible."
+
+def format_perceptual_data_for_analysis(perceptual_data: Dict) -> str:
+    """Convierte los datos perceptuales JSON a texto legible para el análisis."""
+    if "error" in perceptual_data:
+        return f"Error en análisis perceptual: {perceptual_data['error']}"
+    
+    try:
+        formatted = []
+        
+        # Datos Gestalt
+        if "gestalt" in perceptual_data:
+            gestalt = perceptual_data["gestalt"]
+            formatted.append("**DATOS GESTALT ESPERABLES:**")
+            formatted.append(f"• Tactiles: {', '.join(gestalt.get('tactiles', []))}")
+            formatted.append(f"• Dimensionales: {', '.join(gestalt.get('dimensionales', []))}")
+            formatted.append(f"• Estructurales: {', '.join(gestalt.get('estructurales', []))}")
+            formatted.append(f"• Densidad/Masa: {gestalt.get('densidad_masa', 'N/A')}")
+            formatted.append("")
+        
+        # Datos Sensoriales
+        if "sensoriales" in perceptual_data:
+            sensoriales = perceptual_data["sensoriales"]
+            formatted.append("**DATOS SENSORIALES ESPERABLES:**")
+            formatted.append(f"• Colores: {', '.join(sensoriales.get('colores', []))}")
+            formatted.append(f"• Texturas: {', '.join(sensoriales.get('texturas', []))}")
+            formatted.append(f"• Sonidos: {', '.join(sensoriales.get('sonidos', []))}")
+            formatted.append(f"• Térmicas: {', '.join(sensoriales.get('termicas', []))}")
+            formatted.append(f"• Humedad: {sensoriales.get('humedad', 'N/A')}")
+            formatted.append(f"• Movimiento: {sensoriales.get('movimiento', 'N/A')}")
+            formatted.append("")
+        
+        # Datos Conceptuales
+        if "conceptuales" in perceptual_data:
+            conceptuales = perceptual_data["conceptuales"]
+            formatted.append("**DATOS CONCEPTUALES ESPERABLES:**")
+            formatted.append(f"• Emocionales: {', '.join(conceptuales.get('emocionales', []))}")
+            formatted.append(f"• Funcional: {conceptuales.get('funcional', 'N/A')}")
+            formatted.append(f"• Atmósfera: {conceptuales.get('atmosfera', 'N/A')}")
+            formatted.append(f"• Simbólico: {conceptuales.get('simbolico', 'N/A')}")
+            formatted.append(f"• Temporal: {conceptuales.get('temporal', 'N/A')}")
+            formatted.append(f"• Actividad: {conceptuales.get('actividad', 'N/A')}")
+            formatted.append("")
+        
+        # Contexto
+        if "contextual" in perceptual_data:
+            contextual = perceptual_data["contextual"]
+            formatted.append("**ANÁLISIS CONTEXTUAL:**")
+            formatted.append(f"• Factores Ambientales: {', '.join(contextual.get('factores_ambientales', []))}")
+            formatted.append(f"• Impresiones Sutiles: {', '.join(contextual.get('impresiones_sutiles', []))}")
+            formatted.append(f"• Elementos Clave: {', '.join(contextual.get('elementos_clave', []))}")
+        
+        return "\n".join(formatted)
+        
+    except Exception as e:
+        logger.error(f"Error formateando datos perceptuales: {e}")
+        return "Error formateando datos perceptuales para análisis."
+
+# === CORRECCIÓN DE FORMATEO - REEMPLAZAR EN main_bot.py ===
+
 def format_analysis_for_telegram(analysis_text: str) -> str:
-    """Convierte el análisis en formato limpio para Telegram usando HTML."""
+    """Convierte el análisis en formato limpio para Telegram usando HTML con validación."""
     lines = analysis_text.split('\n')
     formatted_lines = []
     
@@ -642,22 +932,35 @@ def format_analysis_for_telegram(analysis_text: str) -> str:
         if not line:
             continue
             
+        # Convertir headers de markdown a HTML
         if line.startswith('# '):
             formatted_lines.append(f"\n🔹 <b>{line[2:].strip()}</b>\n")
         elif line.startswith('## '):
             formatted_lines.append(f"\n📋 <b>{line[3:].strip()}</b>")
         elif line.startswith('### '):
             formatted_lines.append(f"\n• <b>{line[4:].strip()}</b>")
+        # Convertir elementos de lista
         elif line.startswith('- ') or line.startswith('• '):
             formatted_lines.append(f"  • {line[2:].strip()}")
+        # Convertir texto en negrita (pero validar que esté balanceado)
         elif '**' in line:
-            line = line.replace('**', '')
-            formatted_lines.append(f"<b>{line}</b>")
+            # Contar asteriscos para asegurar balance
+            asterisk_count = line.count('**')
+            if asterisk_count % 2 == 0:  # Número par = balanceado
+                line = line.replace('**', '')
+                formatted_lines.append(f"<b>{line}</b>")
+            else:
+                # Si no está balanceado, remover asteriscos sin formatear
+                line = line.replace('**', '')
+                formatted_lines.append(line)
+        # Texto normal
         else:
             formatted_lines.append(line)
     
+    # Unir y limpiar
     result = '\n'.join(formatted_lines)
     
+    # Limpiar caracteres problemáticos más agresivamente
     result = result.replace('*', '')
     result = result.replace('#', '')
     result = result.replace('`', '')
@@ -666,7 +969,123 @@ def format_analysis_for_telegram(analysis_text: str) -> str:
     result = result.replace('(', '')
     result = result.replace(')', '')
     
+    # VALIDACIÓN CRÍTICA: Asegurar que todas las etiquetas HTML estén balanceadas
+    result = validate_and_fix_html_tags(result)
+    
     return result
+
+def validate_and_fix_html_tags(text: str) -> str:
+    """Valida y corrige etiquetas HTML mal balanceadas."""
+    import re
+    
+    # Contar etiquetas de apertura y cierre
+    open_b_tags = len(re.findall(r'<b>', text))
+    close_b_tags = len(re.findall(r'</b>', text))
+    
+    open_i_tags = len(re.findall(r'<i>', text))
+    close_i_tags = len(re.findall(r'</i>', text))
+    
+    # Corregir etiquetas <b> desbalanceadas
+    if open_b_tags > close_b_tags:
+        # Agregar etiquetas de cierre faltantes
+        text += '</b>' * (open_b_tags - close_b_tags)
+    elif close_b_tags > open_b_tags:
+        # Remover etiquetas de cierre excesivas
+        excess_closes = close_b_tags - open_b_tags
+        for _ in range(excess_closes):
+            text = text.replace('</b>', '', 1)
+    
+    # Corregir etiquetas <i> desbalanceadas
+    if open_i_tags > close_i_tags:
+        text += '</i>' * (open_i_tags - close_i_tags)
+    elif close_i_tags > open_i_tags:
+        excess_closes = close_i_tags - open_i_tags
+        for _ in range(excess_closes):
+            text = text.replace('</i>', '', 1)
+    
+    return text
+
+async def send_analysis_safely(bot, chat_id: int, analysis_text: str, title: str = "ANÁLISIS PERCEPTUAL AVANZADO"):
+    """Envía análisis con manejo seguro de longitud y formato."""
+    try:
+        formatted_analysis = format_analysis_for_telegram(analysis_text)
+        
+        # LÍMITE ESTRICTO: 3500 caracteres por mensaje para evitar errores
+        max_length = 3500
+        
+        if len(formatted_analysis) > max_length:
+            # Dividir en partes más pequeñas
+            parts = []
+            current_part = ""
+            
+            lines = formatted_analysis.split('\n')
+            for line in lines:
+                if len(current_part + line + '\n') > max_length:
+                    if current_part.strip():
+                        parts.append(current_part.strip())
+                    current_part = line + '\n'
+                else:
+                    current_part += line + '\n'
+            
+            # Agregar la última parte
+            if current_part.strip():
+                parts.append(current_part.strip())
+            
+            # Enviar cada parte
+            for i, part in enumerate(parts):
+                header = f"📊 <b>{title} - Parte {i+1}/{len(parts)}</b>\n\n" if i == 0 else ""
+                
+                # Validar cada parte antes de enviar
+                safe_part = validate_and_fix_html_tags(header + part)
+                
+                try:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=safe_part,
+                        parse_mode='HTML'
+                    )
+                    await asyncio.sleep(0.5)  # Pausa para evitar flood
+                except Exception as e:
+                    logger.error(f"Error enviando parte {i+1}: {e}")
+                    # Fallback: enviar sin HTML
+                    clean_text = safe_part.replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '')
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"📊 {title} - Parte {i+1}/{len(parts)}\n\n{clean_text}"
+                    )
+                    await asyncio.sleep(0.5)
+        else:
+            # Enviar como mensaje único
+            safe_text = validate_and_fix_html_tags(f"📊 <b>{title}</b>\n\n{formatted_analysis}")
+            
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=safe_text,
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                logger.error(f"Error enviando análisis completo: {e}")
+                # Fallback: enviar sin HTML
+                clean_text = safe_text.replace('<b>', '').replace('</b>', '').replace('<i>', '').replace('</i>', '')
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=clean_text
+                )
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error crítico enviando análisis: {e}")
+        # Último fallback: mensaje de error
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"📊 <b>{title}</b>\n\n⚠️ Error procesando análisis detallado. El sistema de análisis perceptual funcionó correctamente, pero hubo un problema de formato en la respuesta."
+            )
+        except:
+            pass
+        return False
 
 def extract_score_from_analysis(analysis_text: str) -> float:
     """Extrae la puntuación numérica del análisis."""
@@ -1095,13 +1514,14 @@ async def safe_send_photo(bot, chat_id: int, photo_url: str, caption: str, parse
             )
             return False
 
+# === FUNCIÓN finalizar() MEJORADA ===
 async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     if user_id not in user_sessions:
         await update.message.reply_text("❌ No se encontró una sesión activa. Por favor, /start.")
         return ConversationHandler.END
     
-    await update.message.reply_text("⏳ <b>Procesando análisis profesional...</b>\n<i>Contactando sistemas de IA Local y en la Nube...</i>", parse_mode='HTML')
+    await update.message.reply_text("⏳ <b>Procesando análisis perceptual avanzado...</b>\n<i>🧠 IA realizando protocolo completo del objetivo...\n👁️ Comparando capacidades perceptuales...</i>", parse_mode='HTML')
     
     session_data = user_sessions[user_id].get("session_data", {})
     target_info = session_data.get("target")
@@ -1119,30 +1539,51 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"FASE 4 - Datos Conceptuales:\n{session_data.get('fase4', 'N/A')}"
     )
     
-    # Describir objetivo con BLIP
+    # === NUEVO SISTEMA DE ANÁLISIS PERCEPTUAL ===
+    
+    # 1. Descargar imagen del objetivo
+    target_image_bytes = None
     try:
         response = requests.get(target_info["url"], timeout=15)
         response.raise_for_status()
-        target_desc = describe_objective_with_blip(response.content)
+        target_image_bytes = response.content
+        logger.info("✅ Imagen del objetivo descargada correctamente")
     except Exception as e:
-        logger.error(f"No se pudo descargar/describir el objetivo: {e}")
-        target_desc = "Error al procesar la imagen objetivo."
-
-    # Obtener descripción del boceto
+        logger.error(f"No se pudo descargar imagen del objetivo: {e}")
+    
+    # 2. Generar análisis perceptual completo del objetivo
+    target_perceptual_data = {}
+    if target_image_bytes:
+        try:
+            await update.message.reply_text("🧠 <b>IA analizando objetivo...</b>\n<i>Generando datos perceptuales esperables...</i>", parse_mode='HTML')
+            target_perceptual_data = await analyze_target_with_mistral(target_image_bytes)
+            
+            if "error" not in target_perceptual_data:
+                logger.info("✅ Análisis perceptual del objetivo completado")
+            else:
+                logger.warning(f"Error en análisis perceptual: {target_perceptual_data['error']}")
+                
+        except Exception as e:
+            logger.error(f"Error en análisis perceptual del objetivo: {e}")
+            target_perceptual_data = {"error": str(e)}
+    
+    # 3. Obtener descripción del boceto (mantenemos BLIP para descripción visual básica)
     sketch_desc = session_data.get("sketch_description", "El perceptor no proporcionó un boceto.")
     if sketch_desc == "El perceptor no proporcionó un boceto.":
         user_drawing_bytes = session_data.get("fase3_boceto_bytes")
         if user_drawing_bytes:
             sketch_desc = await describe_sketch_with_mistral(user_drawing_bytes)
 
-    # Generar análisis profesional completo
-    session_analysis = await get_professional_analysis_with_mistral(
-        user_transcript, target_desc, sketch_desc, target_info['name'], target_ref
+    # 4. Generar análisis profesional mejorado
+    await update.message.reply_text("📊 <b>Generando análisis comparativo...</b>\n<i>Evaluando capacidades perceptuales...</i>", parse_mode='HTML')
+    
+    session_analysis = await get_enhanced_professional_analysis(
+        user_transcript, target_perceptual_data, sketch_desc, target_info['name'], target_ref
     )
     
     score = extract_score_from_analysis(session_analysis)
     
-    # Sistema de ranking integrado
+    # === SISTEMA DE RANKING (MANTENER IGUAL) ===
     user_pseudonym = get_user_pseudonym(user_id)
     total_points = 0
     user_position = "?"
@@ -1159,12 +1600,11 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             
             user_position = nautilus_db.get_user_ranking_position(user_pseudonym)
             
-            # Verificar si es un nuevo récord personal
             previous_best = nautilus_db.get_user_best_score(user_pseudonym)
             if previous_best and len(previous_best) > 0:
                 is_new_record = total_points > previous_best[0]
             else:
-                is_new_record = True  # Primera sesión es siempre récord
+                is_new_record = True
             
             logger.info(f"Usuario {user_pseudonym}: {total_points} puntos, posición #{user_position}")
             
@@ -1179,65 +1619,73 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Guardar datos para investigación
     save_session_data(user_id, session_data, score)
     
+    # === REVELACIÓN DEL OBJETIVO CON DATOS PERCEPTUALES ===
+    
+    # Crear mensaje de revelación mejorado
+    revelation_caption = f"<b>Coordenadas:</b> <code>{target_ref}</code>\n<b>Objetivo Real:</b> {target_info['name']}\n\n<i>{target_info.get('description', 'Objetivo de percepción remota controlada')}</i>"
+    
+    # Agregar datos perceptuales esperables si están disponibles
+    if target_perceptual_data and "error" not in target_perceptual_data:
+        revelation_caption += "\n\n<b>🧠 DATOS PERCEPTUALES ESPERABLES:</b>"
+        
+        if "gestalt" in target_perceptual_data:
+            gestalt = target_perceptual_data["gestalt"]
+            if gestalt.get("tactiles"):
+                revelation_caption += f"\n• <i>Táctiles:</i> {', '.join(gestalt['tactiles'][:3])}"
+            if gestalt.get("dimensionales"):
+                revelation_caption += f"\n• <i>Dimensionales:</i> {', '.join(gestalt['dimensionales'][:2])}"
+        
+        if "sensoriales" in target_perceptual_data:
+            sensoriales = target_perceptual_data["sensoriales"]
+            if sensoriales.get("termicas"):
+                revelation_caption += f"\n• <i>Térmicas:</i> {', '.join(sensoriales['termicas'][:2])}"
+        
+        revelation_caption += "\n\n<i>¿Captaste alguna de estas sensaciones?</i>"
+    
     # Enviar revelación del objetivo con manejo seguro de errores
     await safe_send_photo(
         context.bot,
         user_id,
         target_info["url"],
-        f"<b>Coordenadas:</b> <code>{target_ref}</code>\n"
-        f"<b>Objetivo Real:</b> {target_info['name']}\n\n"
-        f"<i>{target_info.get('description', 'Objetivo de percepción remota controlada')}</i>"
+        revelation_caption
     )
     
-    # Enviar análisis profesional
+    # === ENVIAR ANÁLISIS PROFESIONAL MEJORADO ===
     if "Error:" in session_analysis:
         await context.bot.send_message(
             chat_id=user_id, 
-            text=f"⚠️ <b>No se pudo generar el análisis profesional</b>\n\n{session_analysis}", 
+            text=f"⚠️ <b>No se pudo generar el análisis perceptual avanzado</b>\n\n{session_analysis}", 
             parse_mode='HTML'
         )
     else:
-        try:
-            formatted_analysis = format_analysis_for_telegram(session_analysis)
-            
-            if len(formatted_analysis) > 4000:
-                parts = [formatted_analysis[i:i+4000] for i in range(0, len(formatted_analysis), 4000)]
-                for i, part in enumerate(parts):
-                    header = f"📊 <b>ANÁLISIS PROFESIONAL - Parte {i+1}/{len(parts)}</b>\n\n" if i == 0 else ""
-                    await context.bot.send_message(
-                        chat_id=user_id, 
-                        text=header + part, 
-                        parse_mode='HTML'
-                    )
-                    await asyncio.sleep(1)
-            else:
-                await context.bot.send_message(
-                    chat_id=user_id, 
-                    text=f"📊 <b>ANÁLISIS PROFESIONAL</b>\n\n{formatted_analysis}", 
-                    parse_mode='HTML'
-                )
-        except Exception as e:
-            logger.error(f"Error enviando análisis formateado: {e}")
-            basic_text = session_analysis.replace('#', '').replace('*', '').replace('`', '')
+        # Usar la nueva función de envío seguro
+        success = await send_analysis_safely(
+            context.bot, 
+            user_id, 
+            session_analysis, 
+            "ANÁLISIS PERCEPTUAL AVANZADO"
+        )
+        
+        if not success:
+            # Si todo falla, enviar resumen básico
             await context.bot.send_message(
-                chat_id=user_id, 
-                text=f"📊 <b>ANÁLISIS PROFESIONAL</b>\n\n{basic_text}", 
+                chat_id=user_id,
+                text=f"📊 <b>ANÁLISIS COMPLETADO</b>\n\n✅ Tu sesión fue analizada con el nuevo sistema perceptual\n🎯 Puntuación obtenida: {int(score * 100)}/1000\n\n<i>El análisis detallado está siendo procesado...</i>",
                 parse_mode='HTML'
             )
     
-    # Mostrar puntuación y ranking
+    # === MOSTRAR PUNTUACIÓN Y RANKING (MANTENER IGUAL) ===
     try:
         if nautilus_db:
-            # Obtener desglose de puntos de la base de datos
             user_best = nautilus_db.get_user_best_score(user_pseudonym)
             if user_best:
                 detail_bonus = user_best[2]
                 time_bonus = user_best[3]
                 quality_bonus = user_best[4]
             else:
-                detail_bonus = total_points - int(score * 100) - 125  # Estimación
-                time_bonus = 50  # Default
-                quality_bonus = 75  # Default
+                detail_bonus = total_points - int(score * 100) - 125
+                time_bonus = 50
+                quality_bonus = 75
             
             points_message = f"""🎯 <b>TU PUNTUACIÓN TOTAL</b>
 
@@ -1245,12 +1693,15 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 📍 <b>Posición #{user_position}</b> en el ranking global
 
 <b>📊 Desglose de Puntos:</b>
-• Score LLM: <b>{int(score * 100)}</b> pts
+• Score Perceptual: <b>{int(score * 100)}</b> pts
 • Bonus Detalles: <b>📡 {detail_bonus}</b> pts  
 • Bonus Tiempo: <b>⏱️ {time_bonus}</b> pts
 • Bonus Calidad: <b>🎯 {quality_bonus}</b> pts
 
-{'🏆 <b>¡NUEVO RÉCORD PERSONAL!</b>' if is_new_record else '📈 Sigue entrenando para mejorar tu récord'}"""
+{'🏆 <b>¡NUEVO RÉCORD PERSONAL!</b>' if is_new_record else '📈 Sigue entrenando para mejorar tu capacidad perceptual'}
+
+<b>🧠 NUEVA CARACTERÍSTICA:</b>
+<i>Ahora el análisis evalúa capacidades perceptuales reales basadas en datos esperables del entorno objetivo.</i>"""
 
             await context.bot.send_message(
                 chat_id=user_id,
@@ -1278,6 +1729,11 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 📈 Promedio de puntos: <b>{stats['average_points']}</b>
 🏆 Récord absoluto: <b>{stats['highest_score']}</b> pts
 
+<b>🆕 ANÁLISIS PERCEPTUAL v3.2:</b>
+✅ Evaluación de capacidades sensoriales reales
+✅ Comparación con datos esperables del entorno
+✅ Entrenamiento basado en percepción contextual
+
 <i>Cada sesión mejora la comprensión científica de la percepción remota.</i>"""
             
             await context.bot.send_message(
@@ -1289,20 +1745,21 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     except Exception as e:
         logger.error(f"Error mostrando ranking: {e}")
     
-    # Mensaje de cierre
+    # === MENSAJE DE CIERRE MEJORADO ===
     pseudonym = get_user_pseudonym(user_id)
     await update.message.reply_html(
-        f"🙏 <b>Sesión Completada</b>\n\n"
+        f"🙏 <b>Sesión de Entrenamiento Perceptual Completada</b>\n\n"
         f"Gracias por participar, <b>{pseudonym}</b>!\n"
-        f"Tu puntuación final: <b>{total_points}</b> puntos\n"
+        f"Tu puntuación perceptual: <b>{total_points}</b> puntos\n"
         f"Posición actual: <b>#{user_position}</b>\n\n"
-        f"<b>🎯 Sistema de Entrenamiento:</b>\n"
-        f"• Compite por mejores posiciones en el ranking\n"
-        f"• Mejora tus técnicas de percepción remota\n"
-        f"• Contribuye a la investigación científica\n\n"
-        f"<i>¡Entrena regularmente para dominar la percepción remota!</i>\n\n"
-        f"Para una nueva sesión, envía /start\n"
-        f"Ver ranking completo: /ranking"
+        f"<b>🧠 Sistema de Entrenamiento Avanzado:</b>\n"
+        f"• Evaluación de capacidades perceptuales reales\n"
+        f"• Comparación con datos esperables del entorno\n"
+        f"• Desarrollo de habilidades sensoriales específicas\n"
+        f"• Competencia basada en precisión perceptual\n\n"
+        f"<i>¡El nuevo sistema evalúa tu capacidad real de percepción remota!</i>\n\n"
+        f"Para una nueva sesión de entrenamiento, envía /start\n"
+        f"Ver ranking perceptual: /ranking"
     )
     
     del user_sessions[user_id]

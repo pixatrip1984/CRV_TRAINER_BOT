@@ -90,7 +90,40 @@
         "sensorial": "sólido, muy voluminoso y denso.",
         "conceptual": "antiguo, construido por el hombre, hogareño"
       }
+    },
+    {
+      "timestamp": "2025-07-03T16:37:20.088574",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "56186",
+      "target_name": "Elegant Palace Garden",
+      "target_url": "https://www.janetredlertravelandtourism.co.uk/files/cache/dfa8aafe90a0f54289f59a404b993f2f_f2268.jpg",
+      "score": 7.2,
+      "phases": {
+        "gestalt": "Sensación de aire fresco, frescura de vegetación, sensaciones suaves pulidas y sólidas y de vegetación, es amplio y simétrico",
+        "sensorial": "tonalidades grises-blanquecinas y verdes, sonidos de movimiento de ramas por el viento, superficie plana y nivelada",
+        "conceptual": "Propósito estético, energía de riqueza y vitalidad"
+      }
+    },
+    {
+      "timestamp": "2025-07-03T16:55:32.157555",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "57814",
+      "target_name": "Peaceful Ancient Stone",
+      "target_url": "https://thumbs.dreamstime.com/z/inside-dambulla-cave-temple-statues-buddha-ancient-sto-sri-lanka-circa-apr-stone-94268172.jpg?w=360",
+      "score": 6.5,
+      "phases": {
+        "gestalt": "suave al tacto, firme y sólido, construido por el hombre, antiguo",
+        "sensorial": "Tonalidades grises verdosas, superficie irregular, diferentes densidades, temperatura fresca",
+        "conceptual": "remoto, atmósfera de lugar sagrado"
+      }
     }
   ],
-  "high_score_targets": []
+  "high_score_targets": [
+    {
+      "name": "Elegant Palace Garden",
+      "url": "https://www.janetredlertravelandtourism.co.uk/files/cache/dfa8aafe90a0f54289f59a404b993f2f_f2268.jpg",
+      "average_score": 7.2,
+      "success_count": 1
+    }
+  ]
 }
