@@ -1,29 +1,36 @@
-# Dependencias para el bot de Telegram
+# === Dependencias del Bot de Telegram y Servidor API ===
+
+# El framework principal para el bot de Telegram
 python-telegram-bot
+
+# Para el servidor web que recibe los dibujos
+fastapi
+uvicorn[standard]
 
 # Para cargar las variables de entorno desde el archivo .env
 python-dotenv
 
-# Librería oficial de OpenAI, usada para la compatibilidad con la API de OpenRouter
+
+# === Dependencias para la IA en la Nube (OpenRouter) ===
+
+# Librería oficial de OpenAI, compatible con la API de OpenRouter
 openai
 
-# (Opcional, pero muy recomendado) Para manejar imágenes fácilmente
-# Pillow es necesaria para algunas operaciones con imágenes, aunque a veces 
-# python-telegram-bot la instala como dependencia. Es bueno tenerla explícitamente.
+
+# === Dependencias para la IA Local (Hugging Face Transformers) ===
+
+# La librería principal para ejecutar modelos de IA localmente
+transformers
+
+# El framework de Deep Learning sobre el que corre Transformers
+# Nota: Esto instalará la versión para CPU. Si tienes una GPU NVIDIA con CUDA,
+# deberías instalar la versión para GPU siguiendo las instrucciones de la web de PyTorch.
+torch
+torchvision
+torchaudio
+
+# Librería para el manejo y procesamiento de imágenes
 Pillow
 
-# Dependencias para el servidor web FastAPI
-fastapi
-uvicorn[standard]
-
-# Para manejar CORS (Cross-Origin Resource Sharing) - necesario para comunicación web
-fastapi-cors
-
-# Para validación de datos robusta con Pydantic
-pydantic
-
-# Para hacer peticiones HTTP a OpenRouter
-httpx
-
-# Para descargar imágenes desde URLs
+# Librería para descargar las imágenes de los objetivos desde sus URLs
 requests
