@@ -107,23 +107,31 @@ class APIResponse(BaseModel):
 TARGET_POOL = [
     {
         "id": "T001", "name": "Las Pirámides de Giza con la Esfinge",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Great_Sphinx_of_Giza_9049.jpg",
+        "url": "https://images.unsplash.com/photo-1539650116574-75c0c6d05be5?w=800&h=600&fit=crop",
     },
     {
-        "id": "T002", "name": "El Puente Golden Gate en la niebla",
-        "url": "https://commons.wikimedia.org/wiki/File:Golden_Gate_Bridge_Yang_Ming_Line.jpg",
+        "id": "T002", "name": "El Puente Golden Gate en la niebla", 
+        "url": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop",
     },
     {
         "id": "T003", "name": "La Torre Eiffel de noche",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/d/d2/Eiffelturm.JPG",
+        "url": "https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?w=800&h=600&fit=crop",
     },
     {
         "id": "T004", "name": "La Cascada Seljalandsfoss en Islandia",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/6/69/Seljalandsfoss%2C_Su%C3%B0urland%2C_Islandia%2C_2014-08-16%2C_DD_201-203_HDR.JPG",
+        "url": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop",
     },
     {
         "id": "T005", "name": "El Transbordador Espacial despegando",
-        "url": "https://commons.wikimedia.org/wiki/File:STS-125_Atlantis_Liftoff_02.jpg",
+        "url": "https://images.unsplash.com/photo-1446776877081-d282a0f896e2?w=800&h=600&fit=crop",
+    },
+    {
+        "id": "T006", "name": "Un Faro en Acantilado",
+        "url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop",
+    },
+    {
+        "id": "T007", "name": "Montañas con Lago Alpino",
+        "url": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop",
     },
 ]
 

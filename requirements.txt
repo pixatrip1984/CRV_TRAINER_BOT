@@ -21,3 +21,9 @@ fastapi-cors
 
 # Para validación de datos robusta con Pydantic
 pydantic
+
+# Para hacer peticiones HTTP a OpenRouter
+httpx
+
+# Para descargar imágenes desde URLs
+requests
