@@ -1,8 +1,8 @@
 # main_bot.py
 
 # ==============================================================================
-#                      PROTOCOLO NAUTILUS - TELEGRAM BOT v3.0
-#                   (Sistema Profesional con Búsqueda Ética)
+#                      PROTOCOLO NAUTILUS - TELEGRAM BOT v3.1
+#                    (DuckDuckGo Real + UX Optimizada)
 # ==============================================================================
 
 import os
@@ -11,10 +11,14 @@ import random
 import base64
 import asyncio
 import re
+import json
+import hashlib
 from io import BytesIO
 from typing import Dict, Optional, Any, List, Tuple
+from datetime import datetime
 
 import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +52,7 @@ FASTAPI_PORT = int(os.getenv("FASTAPI_PORT", "8000"))
 if not TELEGRAM_TOKEN: raise ValueError("TELEGRAM_TOKEN no encontrado.")
 
 CANVAS_URL = "https://pixatrip1984.github.io/nautilus-canvas/"
+DATA_FILE = "nautilus_research_data.json"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
@@ -87,34 +92,685 @@ def initialize_blip_model():
 
 # --- 3. SISTEMA DE COORDENADAS PROFESIONAL ---
 def generate_professional_coordinates() -> str:
-    """
-    Genera coordenadas siguiendo el estándar de programas formales de percepción remota.
-    Formato: XXXX-XXXX o similar, sin prefijos fijos para evitar sesgos.
-    """
+    """Genera coordenadas siguiendo el estándar de programas formales de percepción remota."""
     formats = [
-        # Formato clásico: 4-4 dígitos
         lambda: f"{random.randint(1000, 9999)}-{random.randint(1000, 9999)}",
-        # Formato extendido: 4-5 dígitos  
         lambda: f"{random.randint(1000, 9999)}-{random.randint(10000, 99999)}",
-        # Formato militar: 5-4 dígitos
         lambda: f"{random.randint(10000, 99999)}-{random.randint(1000, 9999)}",
-        # Formato secuencial: 6 dígitos
         lambda: f"{random.randint(100000, 999999)}",
-        # Formato alfanumérico: XXXX-YZ
         lambda: f"{random.randint(1000, 9999)}-{random.choice('ABCDEFGHJKLMNPQRSTUVWXYZ')}{random.randint(1, 9)}",
-        # Formato de laboratorio: XXXXX
         lambda: f"{random.randint(10000, 99999)}",
     ]
-    
-    selected_format = random.choice(formats)
-    return selected_format()
+    return random.choice(formats)()
 
-# --- FUNCIONES AUXILIARES PARA MANEJO DE TEXTO ---
+# --- 4. SISTEMA DE PSEUDÓNIMOS Y DATOS ---
+def get_user_pseudonym(user_id: int) -> str:
+    """Genera un pseudónimo consistente para un user_id."""
+    # Usar hash del user_id para generar pseudónimo consistente
+    hash_input = f"nautilus_{user_id}_salt_2025"
+    hash_digest = hashlib.md5(hash_input.encode()).hexdigest()
+    
+    # Listas de nombres científicos/místicos
+    prefixes = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Theta", "Lambda", "Sigma", "Omega", 
+                "Nova", "Quasar", "Pulsar", "Nebula", "Cosmos", "Astral", "Stellar", "Lunar", "Solar", "Vortex"]
+    suffixes = ["Explorer", "Seeker", "Voyager", "Navigator", "Observer", "Perceiver", "Sensor", "Scanner", 
+                "Detector", "Finder", "Hunter", "Tracker", "Reader", "Viewer", "Seer", "Oracle", "Mystic"]
+    
+    # Usar el hash para seleccionar consistentemente
+    prefix_idx = int(hash_digest[:2], 16) % len(prefixes)
+    suffix_idx = int(hash_digest[2:4], 16) % len(suffixes)
+    number = int(hash_digest[4:6], 16) % 1000
+    
+    return f"{prefixes[prefix_idx]}{suffixes[suffix_idx]}{number:03d}"
+
+def save_session_data(user_id: int, session_data: dict, score: float):
+    """Guarda los datos de la sesión para research futuro."""
+    try:
+        # Cargar datos existentes
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            data = {"sessions": [], "high_score_targets": []}
+        
+        # Agregar nueva sesión
+        session_record = {
+            "timestamp": datetime.now().isoformat(),
+            "user_pseudonym": get_user_pseudonym(user_id),
+            "coordinates": session_data.get("target_ref", "unknown"),
+            "target_name": session_data.get("target", {}).get("name", "unknown"),
+            "target_url": session_data.get("target", {}).get("url", ""),
+            "score": score,
+            "phases": {
+                "gestalt": session_data.get("fase1", ""),
+                "sensorial": session_data.get("fase2", ""),
+                "conceptual": session_data.get("fase4", ""),
+            }
+        }
+        
+        data["sessions"].append(session_record)
+        
+        # Si el puntaje es alto (>7.0), agregar al pool de objetivos exitosos
+        if score > 7.0:
+            target_exists = any(t["url"] == session_record["target_url"] for t in data["high_score_targets"])
+            if not target_exists:
+                data["high_score_targets"].append({
+                    "name": session_record["target_name"],
+                    "url": session_record["target_url"],
+                    "average_score": score,
+                    "success_count": 1
+                })
+            else:
+                # Actualizar promedio
+                for target in data["high_score_targets"]:
+                    if target["url"] == session_record["target_url"]:
+                        target["success_count"] += 1
+                        target["average_score"] = (target["average_score"] + score) / 2
+                        break
+        
+        # Guardar datos
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            
+        logger.info(f"Datos de sesión guardados para {get_user_pseudonym(user_id)}")
+        
+    except Exception as e:
+        logger.error(f"Error guardando datos de sesión: {e}")
+
+# --- 5. GENERACIÓN INTELIGENTE DE TÉRMINOS CON LLM ---
+
+async def generate_search_term_with_llm() -> str:
+    """
+    Usa Mistral para generar términos de búsqueda éticos y seguros de manera inteligente.
+    """
+    if not openrouter_client:
+        # Fallback si no hay cliente disponible
+        fallback_terms = [
+            "ancient stone bridge peaceful landscape",
+            "historic lighthouse coastal scenery",
+            "traditional wooden temple garden",
+            "serene mountain lake reflection",
+            "classical marble fountain courtyard"
+        ]
+        return random.choice(fallback_terms)
+    
+    try:
+        logger.info("Generando término de búsqueda con Mistral...")
+        
+        system_prompt = """Eres un especialista en percepción remota y selección ética de objetivos. Tu tarea es generar términos de búsqueda únicos y seguros para encontrar imágenes apropiadas para sesiones de percepción remota controlada."""
+        
+        user_prompt = """Genera un término de búsqueda único y específico para encontrar una imagen ética apropiada para percepción remota.
+
+**CRITERIOS OBLIGATORIOS DE SEGURIDAD:**
+• SOLO lugares, arquitectura, paisajes naturales, monumentos históricos
+• NUNCA personas, rostros, cuerpos humanos, multitudes
+• NUNCA contenido violento, traumático, controvertido o perturbador
+• NUNCA sitios de guerra, desastres, accidentes, cementerios
+• NUNCA contenido religioso controvertido o símbolos polarizantes
+• NUNCA ubicaciones privadas o con posibles problemas de privacidad
+
+**TIPOS APROPIADOS (elige uno):**
+1. **Arquitectura Histórica:** templos antiguos, catedrales, puentes de piedra, faros, observatorios, bibliotecas clásicas, castillos, monasterios
+2. **Paisajes Naturales:** montañas, lagos, cascadas, bosques, valles, praderas, costas rocosas, formaciones geológicas
+3. **Jardines y Espacios:** jardines zen, patios históricos, plazas públicas, fuentes clásicas, laberintos de jardín
+4. **Monumentos Culturales:** estatuas (sin personas), obeliscos, arcos triunfales, columnas históricas, estructuras astronómicas
+
+**INSTRUCCIONES:**
+- Genera SOLO el término de búsqueda (máximo 4-5 palabras en inglés)
+- Sé específico pero no demasiado restrictivo
+- Incluye adjetivos descriptivos que sugieran tranquilidad
+- Evita términos ambiguos que puedan retornar contenido inapropiado
+- Cada término debe ser único y creativo
+
+**EJEMPLOS DE BUENOS TÉRMINOS:**
+- "ancient stone lighthouse peaceful coast"
+- "serene mountain temple garden"
+- "historic marble fountain courtyard"
+- "tranquil forest waterfall scene"
+- "classical observatory dome architecture"
+
+**FORMATO DE RESPUESTA:**
+Responde ÚNICAMENTE con el término de búsqueda, sin explicaciones adicionales.
+
+Genera ahora un término único y seguro:"""
+
+        response = await asyncio.to_thread(
+            openrouter_client.chat.completions.create,
+            model=MISTRAL_CLOUD_MODEL_ID,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.8,  # Alta creatividad para variedad
+            max_tokens=50
+        )
+        
+        search_term = response.choices[0].message.content.strip()
+        
+        # Validación básica del término generado
+        forbidden_words = [
+            'person', 'people', 'human', 'man', 'woman', 'child', 'face', 'body',
+            'war', 'battle', 'death', 'grave', 'cemetery', 'disaster', 'accident',
+            'violence', 'blood', 'weapon', 'gun', 'bomb', 'fire', 'destruction'
+        ]
+        
+        # Verificar que no contenga palabras prohibidas
+        search_term_lower = search_term.lower()
+        if any(word in search_term_lower for word in forbidden_words):
+            logger.warning(f"Término generado contiene palabras prohibidas: {search_term}")
+            # Usar fallback seguro
+            return "peaceful ancient stone temple"
+        
+        # Verificar longitud razonable
+        if len(search_term.split()) > 6:
+            logger.warning(f"Término generado muy largo: {search_term}")
+            search_term = " ".join(search_term.split()[:5])
+        
+        logger.info(f"Término de búsqueda generado: '{search_term}'")
+        return search_term
+        
+    except Exception as e:
+        logger.error(f"Error generando término con LLM: {e}")
+        # Fallback seguro
+        return "ancient peaceful stone temple"
+
+async def generate_search_term_with_llm() -> str:
+    """
+    Usa Mistral para generar términos de búsqueda éticos y seguros de manera inteligente.
+    """
+    if not openrouter_client:
+        # Fallback si no hay cliente disponible
+        fallback_terms = [
+            "ancient stone bridge peaceful landscape",
+            "historic lighthouse coastal scenery",
+            "traditional wooden temple garden",
+            "serene mountain lake reflection",
+            "classical marble fountain courtyard"
+        ]
+        return random.choice(fallback_terms)
+    
+    try:
+        logger.info("Generando término de búsqueda con Mistral...")
+        
+        system_prompt = """Eres un especialista en percepción remota y selección ética de objetivos. Tu tarea es generar términos de búsqueda únicos y seguros para encontrar imágenes apropiadas para sesiones de percepción remota controlada."""
+        
+        user_prompt = """Genera un término de búsqueda único y específico para encontrar una imagen ética apropiada para percepción remota.
+
+**CRITERIOS OBLIGATORIOS DE SEGURIDAD:**
+• SOLO lugares, arquitectura, paisajes naturales, monumentos históricos
+• NUNCA personas, rostros, cuerpos humanos, multitudes
+• NUNCA contenido violento, traumático, controvertido o perturbador
+• NUNCA sitios de guerra, desastres, accidentes, cementerios
+• NUNCA contenido religioso controvertido o símbolos polarizantes
+• NUNCA ubicaciones privadas o con posibles problemas de privacidad
+
+**TIPOS APROPIADOS (elige uno):**
+1. **Arquitectura Histórica:** templos antiguos, catedrales, puentes de piedra, faros, observatorios, bibliotecas clásicas, castillos, monasterios
+2. **Paisajes Naturales:** montañas, lagos, cascadas, bosques, valles, praderas, costas rocosas, formaciones geológicas
+3. **Jardines y Espacios:** jardines zen, patios históricos, plazas públicas, fuentes clásicas, laberintos de jardín
+4. **Monumentos Culturales:** estatuas (sin personas), obeliscos, arcos triunfales, columnas históricas, estructuras astronómicas
+
+**INSTRUCCIONES:**
+- Genera SOLO el término de búsqueda (máximo 4-5 palabras en inglés)
+- Sé específico pero no demasiado restrictivo
+- Incluye adjetivos descriptivos que sugieran tranquilidad
+- Evita términos ambiguos que puedan retornar contenido inapropiado
+- Cada término debe ser único y creativo
+- NO uses comillas ni caracteres especiales
+
+**EJEMPLOS DE BUENOS TÉRMINOS:**
+- ancient stone lighthouse peaceful coast
+- serene mountain temple garden
+- historic marble fountain courtyard
+- tranquil forest waterfall scene
+- classical observatory dome architecture
+
+**FORMATO DE RESPUESTA:**
+Responde ÚNICAMENTE con el término de búsqueda sin comillas, sin explicaciones adicionales.
+
+Genera ahora un término único y seguro:"""
+
+        response = await asyncio.to_thread(
+            openrouter_client.chat.completions.create,
+            model=MISTRAL_CLOUD_MODEL_ID,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.8,  # Alta creatividad para variedad
+            max_tokens=50
+        )
+        
+        search_term = response.choices[0].message.content.strip()
+        
+        # Limpiar comillas y caracteres especiales
+        search_term = search_term.replace('"', '').replace("'", '').replace('`', '')
+        search_term = search_term.strip()
+        
+        # Validación básica del término generado
+        forbidden_words = [
+            'person', 'people', 'human', 'man', 'woman', 'child', 'face', 'body',
+            'war', 'battle', 'death', 'grave', 'cemetery', 'disaster', 'accident',
+            'violence', 'blood', 'weapon', 'gun', 'bomb', 'fire', 'destruction'
+        ]
+        
+        # Verificar que no contenga palabras prohibidas
+        search_term_lower = search_term.lower()
+        if any(word in search_term_lower for word in forbidden_words):
+            logger.warning(f"Término generado contiene palabras prohibidas: {search_term}")
+            # Usar fallback seguro
+            return "peaceful ancient stone temple"
+        
+        # Verificar longitud razonable
+        if len(search_term.split()) > 6:
+            logger.warning(f"Término generado muy largo: {search_term}")
+            search_term = " ".join(search_term.split()[:5])
+        
+        logger.info(f"Término de búsqueda generado: '{search_term}'")
+        return search_term
+        
+    except Exception as e:
+        logger.error(f"Error generando término con LLM: {e}")
+        # Fallback seguro
+        return "ancient peaceful stone temple"
+
+async def search_duckduckgo_images_real(query: str, max_results: int = 5) -> List[str]:
+    """Busca imágenes usando la librería duckduckgo_search."""
+    try:
+        from duckduckgo_search import DDGS
+        import time
+        
+        logger.info(f"Buscando imágenes con DDGS para: '{query}'")
+        
+        def search_images():
+            results = []
+            try:
+                with DDGS() as ddgs:
+                    # Configuración corregida para la API actual
+                    search_params = {
+                        "keywords": query,
+                        "region": "us-en",  # Región en inglés
+                        "safesearch": "On",  # "On" en lugar de "Strict"
+                        "size": "Medium",
+                        "type_image": None,  # Cualquier tipo
+                        "layout": None,      # Cualquier layout
+                        "license_image": None,  # Cualquier licencia
+                        "max_results": max_results * 3  # Buscar más para filtrar
+                    }
+                    
+                    # Ejecutar búsqueda de imágenes
+                    for r in ddgs.images(**search_params):
+                        try:
+                            image_url = r.get("image")
+                            if image_url and validate_image_url_basic(image_url):
+                                # Verificar que la URL no contenga términos problemáticos
+                                url_lower = image_url.lower()
+                                forbidden_url_parts = ['person', 'people', 'face', 'human', 'man', 'woman']
+                                if not any(part in url_lower for part in forbidden_url_parts):
+                                    results.append(image_url)
+                                    logger.debug(f"URL válida encontrada: {image_url[:100]}...")
+                                    
+                                    if len(results) >= max_results:
+                                        break
+                            
+                            # Pequeña pausa para no sobrecargar
+                            time.sleep(0.1)
+                            
+                        except Exception as e:
+                            logger.debug(f"Error procesando resultado individual: {e}")
+                            continue
+                            
+            except Exception as e:
+                logger.error(f"Error en búsqueda DDGS detallado: {e}")
+                
+            return results
+        
+        # Ejecutar búsqueda en thread separado
+        image_urls = await asyncio.to_thread(search_images)
+        
+        logger.info(f"DDGS encontró {len(image_urls)} imágenes válidas")
+        return image_urls
+        
+    except ImportError:
+        logger.error("Librería duckduckgo_search no instalada")
+        return []
+    except Exception as e:
+        logger.error(f"Error general en DDGS: {e}")
+        return []
+
+async def search_duckduckgo_images_fallback(query: str, max_results: int = 5) -> List[str]:
+    """Fallback mejorado con web scraping."""
+    try:
+        logger.info(f"Usando fallback de web scraping para: '{query}'")
+        
+        # Headers más completos
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1'
+        }
+        
+        # URL con parámetros específicos para imágenes
+        search_url = f"https://duckduckgo.com/?q={query.replace(' ', '+')}&t=h_&iax=images&ia=images&safe=strict"
+        
+        response = await asyncio.to_thread(requests.get, search_url, headers=headers, timeout=20)
+        response.raise_for_status()
+        
+        logger.debug(f"Respuesta HTTP: {response.status_code}, Tamaño: {len(response.content)} bytes")
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        image_urls = []
+        
+        # Estrategia 1: Buscar imágenes directas
+        img_tags = soup.find_all('img', src=True)
+        for img in img_tags:
+            src = img.get('src')
+            if src and validate_image_url_basic(src) and 'http' in src:
+                if len(image_urls) < max_results:
+                    image_urls.append(src)
+                    logger.debug(f"Imagen encontrada (directa): {src[:100]}...")
+        
+        # Estrategia 2: Buscar en atributos data
+        if len(image_urls) < max_results:
+            data_attrs = ['data-src', 'data-original', 'data-lazy', 'data-image']
+            for attr in data_attrs:
+                elements = soup.find_all(attrs={attr: True})
+                for element in elements:
+                    url = element.get(attr)
+                    if url and validate_image_url_basic(url) and 'http' in url:
+                        if len(image_urls) < max_results:
+                            image_urls.append(url)
+                            logger.debug(f"Imagen encontrada ({attr}): {url[:100]}...")
+        
+        # Estrategia 3: Buscar en JSON embebido
+        if len(image_urls) < max_results:
+            json_urls = extract_images_from_scripts(soup)
+            for url in json_urls:
+                if validate_image_url_basic(url):
+                    if len(image_urls) < max_results:
+                        image_urls.append(url)
+                        logger.debug(f"Imagen encontrada (JSON): {url[:100]}...")
+        
+        # Estrategia 4: Usar términos alternativos si no encontramos nada
+        if not image_urls:
+            logger.info("No se encontraron imágenes, probando términos alternativos")
+            # Simplificar el término de búsqueda
+            simple_terms = query.split()[:2]  # Solo las primeras 2 palabras
+            simple_query = " ".join(simple_terms)
+            
+            if simple_query != query:
+                return await search_unsplash_alternative(simple_query, max_results)
+        
+        logger.info(f"Web scraping encontró {len(image_urls)} imágenes válidas")
+        return image_urls
+        
+    except Exception as e:
+        logger.error(f"Error en fallback de web scraping: {e}")
+        return []
+
+def extract_images_from_scripts(soup) -> List[str]:
+    """Extrae URLs de imágenes desde scripts JSON mejorado."""
+    urls = []
+    try:
+        scripts = soup.find_all('script')
+        for script in scripts:
+            if script.string and 'http' in script.string:
+                # Patrones más específicos para encontrar URLs de imágenes
+                patterns = [
+                    r'https?://[^\s"\'<>]+\.(?:jpg|jpeg|png|webp|gif|svg)(?:\?[^\s"\'<>]*)?',
+                    r'"image":\s*"(https?://[^\s"\'<>]+)"',
+                    r'"url":\s*"(https?://[^\s"\'<>]+\.(?:jpg|jpeg|png|webp|gif))"',
+                    r'"src":\s*"(https?://[^\s"\'<>]+\.(?:jpg|jpeg|png|webp|gif))"'
+                ]
+                
+                for pattern in patterns:
+                    import re
+                    matches = re.findall(pattern, script.string, re.IGNORECASE)
+                    for match in matches:
+                        url = match if isinstance(match, str) else match[0] if isinstance(match, tuple) else str(match)
+                        if validate_image_url_basic(url):
+                            urls.append(url)
+                            
+    except Exception as e:
+        logger.debug(f"Error extrayendo de scripts: {e}")
+    return urls
+
+async def search_unsplash_alternative(query: str, max_results: int = 5) -> List[str]:
+    """Búsqueda alternativa usando Unsplash como último recurso."""
+    try:
+        logger.info(f"Usando Unsplash como alternativa para: '{query}'")
+        
+        # Mapeo de términos a URLs de Unsplash verificadas
+        unsplash_alternatives = {
+            'ancient temple': 'https://images.unsplash.com/photo-1520637836862-4d197d17c93a?w=800&h=600&fit=crop',
+            'stone bridge': 'https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&h=600&fit=crop',
+            'historic bridge': 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=800&h=600&fit=crop',
+            'lighthouse': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop',
+            'mountain lake': 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&h=600&fit=crop',
+            'waterfall': 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=800&h=600&fit=crop',
+            'garden': 'https://images.unsplash.com/photo-1547036967-23d11aacaee0?w=800&h=600&fit=crop',
+            'fountain': 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?w=800&h=600&fit=crop',
+            'cathedral': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=600&fit=crop',
+            'castle': 'https://images.unsplash.com/photo-1464822759844-d150baec0494?w=800&h=600&fit=crop'
+        }
+        
+        # Buscar coincidencias en el query
+        query_lower = query.lower()
+        for key, url in unsplash_alternatives.items():
+            if key in query_lower:
+                logger.info(f"Encontrada alternativa de Unsplash para '{key}': {url}")
+                return [url]
+        
+        # Si no hay coincidencia específica, usar una imagen genérica apropiada
+        default_urls = list(unsplash_alternatives.values())
+        return [random.choice(default_urls)]
+        
+    except Exception as e:
+        logger.error(f"Error en búsqueda alternativa de Unsplash: {e}")
+        return []
+
+# Función principal que coordina todas las estrategias de búsqueda
+async def search_duckduckgo_images(query: str, max_results: int = 5) -> List[str]:
+    """
+    Función principal que coordina todas las estrategias de búsqueda de imágenes.
+    Intenta múltiples métodos en orden de preferencia.
+    """
+    logger.info(f"Iniciando búsqueda de imágenes para: '{query}'")
+    
+    # Estrategia 1: DDGS (método principal)
+    results = await search_duckduckgo_images_real(query, max_results)
+    if results:
+        logger.info(f"✅ DDGS exitoso: {len(results)} imágenes")
+        return results
+    
+    # Estrategia 2: Web scraping (primer fallback)
+    logger.info("DDGS falló, intentando web scraping...")
+    results = await search_duckduckgo_images_fallback(query, max_results)
+    if results:
+        logger.info(f"✅ Web scraping exitoso: {len(results)} imágenes")
+        return results
+    
+    # Estrategia 3: Términos simplificados (segundo fallback)
+    if len(query.split()) > 2:
+        simple_query = " ".join(query.split()[:2])
+        logger.info(f"Probando términos simplificados: '{simple_query}'")
+        
+        results = await search_duckduckgo_images_real(simple_query, max_results)
+        if results:
+            logger.info(f"✅ Términos simplificados exitoso: {len(results)} imágenes")
+            return results
+    
+    # Estrategia 4: Unsplash alternativo (último recurso)
+    logger.info("Todas las búsquedas fallaron, usando Unsplash alternativo...")
+    results = await search_unsplash_alternative(query, max_results)
+    if results:
+        logger.info(f"✅ Unsplash alternativo exitoso: {len(results)} imágenes")
+        return results
+    
+    # Si todo falla, retornar lista vacía (el sistema usará fallback de emergencia)
+    logger.warning("Todas las estrategias de búsqueda fallaron")
+    return []
+    """Validación básica mejorada de URL de imagen."""
+    if not url or not isinstance(url, str):
+        return False
+    
+    # Debe empezar con http/https
+    if not url.startswith(('http://', 'https://')):
+        return False
+    
+    # Verificar extensiones de imagen o dominios confiables
+    url_lower = url.lower()
+    
+    # Extensiones de imagen válidas
+    image_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg']
+    has_image_ext = any(ext in url_lower for ext in image_extensions)
+    
+    # Dominios confiables para imágenes
+    trusted_domains = [
+        'unsplash.com', 'pixabay.com', 'pexels.com', 'wikimedia.org',
+        'flickr.com', 'imgur.com', 'cloudinary.com', 'amazonaws.com'
+    ]
+    is_trusted_domain = any(domain in url_lower for domain in trusted_domains)
+    
+    # URLs que NO queremos (contenido inapropiado)
+    forbidden_patterns = [
+        'profile', 'avatar', 'user', 'people', 'person', 'face',
+        'social', 'facebook', 'instagram', 'twitter', 'selfie'
+    ]
+    has_forbidden = any(pattern in url_lower for pattern in forbidden_patterns)
+    
+    return (has_image_ext or is_trusted_domain) and not has_forbidden
+
+async def validate_image_content_with_llm(image_url: str) -> bool:
+    """
+    Valida que el contenido de una imagen sea apropiado usando Mistral Vision.
+    """
+    if not openrouter_client:
+        return True  # Si no hay LLM, asumir que es válida
+    
+    try:
+        # Descargar imagen para análisis
+        response = await asyncio.to_thread(requests.get, image_url, timeout=10)
+        if response.status_code != 200:
+            return False
+            
+        # Convertir a base64
+        image_b64 = base64.b64encode(response.content).decode('utf-8')
+        
+        validation_prompt = """Analiza esta imagen y determina si es apropiada para percepción remota.
+
+CRITERIOS DE APROBACIÓN:
+✅ Paisajes naturales, arquitectura histórica, monumentos, jardines
+✅ Lugares públicos sin personas visibles
+✅ Estructuras, edificios, formaciones naturales
+
+CRITERIOS DE RECHAZO:
+❌ Personas, rostros, cuerpos humanos (incluso parciales)
+❌ Contenido violento, traumático o controvertido
+❌ Lugares de guerra, desastres, accidentes
+❌ Contenido privado o inapropiado
+
+Responde ÚNICAMENTE con "APROPIADA" o "RECHAZADA"."""
+
+        response = await asyncio.to_thread(
+            openrouter_client.chat.completions.create,
+            model=MISTRAL_CLOUD_MODEL_ID,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": validation_prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
+                ]
+            }],
+            temperature=0.1,
+            max_tokens=10
+        )
+        
+        result = response.choices[0].message.content.strip().upper()
+        is_appropriate = "APROPIADA" in result
+        
+        logger.info(f"Validación de imagen: {result} ({'✅' if is_appropriate else '❌'})")
+        return is_appropriate
+        
+    except Exception as e:
+        logger.error(f"Error validando contenido de imagen: {e}")
+        return False  # En caso de error, rechazar por seguridad
+
+async def select_ethical_target_dynamic() -> Dict[str, str]:
+    """
+    Selecciona un objetivo ético usando LLM para generar términos de búsqueda.
+    """
+    max_attempts = 3
+    
+    for attempt in range(max_attempts):
+        try:
+            logger.info(f"Intento {attempt + 1} de selección de objetivo")
+            
+            # 1. Generar término de búsqueda con LLM
+            search_term = await generate_search_term_with_llm()
+            
+            # 2. Buscar imágenes con DuckDuckGo
+            image_urls = await search_duckduckgo_images(search_term)
+            
+            # 3. Validar contenido de imágenes encontradas
+            for url in image_urls:
+                if await validate_image_content_with_llm(url):
+                    # Crear nombre descriptivo del objetivo
+                    target_name = " ".join(word.capitalize() for word in search_term.split()[:3])
+                    
+                    target = {
+                        "name": target_name,
+                        "url": url,
+                        "description": f"Objetivo generado dinámicamente: {search_term}",
+                        "search_term": search_term,
+                        "generation_method": "llm_dynamic"
+                    }
+                    
+                    logger.info(f"✅ Objetivo dinámico seleccionado: {target_name}")
+                    return target
+            
+            logger.warning(f"Intento {attempt + 1}: No se encontraron imágenes válidas para '{search_term}'")
+            
+        except Exception as e:
+            logger.error(f"Error en intento {attempt + 1}: {e}")
+    
+    # Si todos los intentos fallan, usar fallback garantizado
+    logger.warning("Todos los intentos fallaron, usando objetivo de emergencia")
+    return get_fallback_target()
+
+def get_fallback_target() -> Dict[str, str]:
+    """Objetivos de emergencia completamente seguros."""
+    emergency_targets = [
+        {
+            "name": "Ancient Stone Temple",
+            "url": "https://images.unsplash.com/photo-1520637836862-4d197d17c93a?w=800&h=600&fit=crop",
+            "description": "Templo de piedra ancestral - objetivo de emergencia"
+        },
+        {
+            "name": "Peaceful Mountain Lake",
+            "url": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&h=600&fit=crop", 
+            "description": "Lago de montaña sereno - objetivo de emergencia"
+        },
+        {
+            "name": "Historic Lighthouse Coast",
+            "url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop",
+            "description": "Faro histórico costero - objetivo de emergencia"
+        }
+    ]
+    return random.choice(emergency_targets)
+
+# --- 6. FUNCIONES DE FORMATEO ---
 def format_analysis_for_telegram(analysis_text: str) -> str:
-    """
-    Convierte el análisis en formato limpio para Telegram usando HTML.
-    """
-    # Limpiar y estructurar el texto
+    """Convierte el análisis en formato limpio para Telegram usando HTML."""
     lines = analysis_text.split('\n')
     formatted_lines = []
     
@@ -155,121 +811,28 @@ def format_analysis_for_telegram(analysis_text: str) -> str:
     
     return result
 
-# Pool corregido de objetivos con URLs verificadas
-VERIFIED_SAFE_TARGETS = [
-    {
-        "name": "Puente de Piedra Ancestral",
-        "url": "https://images.unsplash.com/photo-1516026672322-bc52d61a55d5?w=800&h=600&fit=crop",
-        "description": "Construcción histórica integrando naturaleza y arquitectura"
-    },
-    {
-        "name": "Templo Dorado de Kyoto en Otoño",
-        "url": "https://images.unsplash.com/photo-1545569341-9eb8b30979d9?w=800&h=600&fit=crop",
-        "description": "Arquitectura tradicional japonesa rodeada de naturaleza"
-    },
-    {
-        "name": "Catedral Gótica con Luz Natural",
-        "url": "https://images.unsplash.com/photo-1520637836862-4d197d17c93a?w=800&h=600&fit=crop",
-        "description": "Majestuosa arquitectura religiosa histórica"
-    },
-    {
-        "name": "Faro Histórico al Amanecer",
-        "url": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop",
-        "description": "Estructura marítima clásica con significado de guía"
-    },
-    {
-        "name": "Biblioteca Antigua con Cúpula",
-        "url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=600&fit=crop",
-        "description": "Arquitectura dedicada al conocimiento y la sabiduría"
-    },
-    {
-        "name": "Jardín de Meditación Zen",
-        "url": "https://images.unsplash.com/photo-1547036967-23d11aacaee0?w=800&h=600&fit=crop",
-        "description": "Espacio diseñado para la contemplación y paz interior"
-    },
-    {
-        "name": "Observatorio Astronómico Histórico",
-        "url": "https://images.unsplash.com/photo-1464822759844-d150baec0494?w=800&h=600&fit=crop",
-        "description": "Estructura dedicada al estudio del cosmos"
-    },
-    {
-        "name": "Cascada en Bosque Primigenio",
-        "url": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&h=600&fit=crop",
-        "description": "Fuerza natural en ecosistema preservado"
-    },
-    {
-        "name": "Molino de Viento Tradicional",
-        "url": "https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=800&h=600&fit=crop",
-        "description": "Tecnología histórica en armonía con elementos naturales"
-    },
-    {
-        "name": "Anfiteatro Romano entre Colinas",
-        "url": "https://images.unsplash.com/photo-1539650116574-75c0c6d05be5?w=800&h=600&fit=crop",
-        "description": "Arquitectura clásica diseñada para reunión y cultura"
-    }
-]
-SAFE_SEARCH_CATEGORIES = {
-    "arquitectura_historica": [
-        "ancient stone temple peaceful", "medieval cathedral architecture", 
-        "historic monastery mountains", "traditional wooden bridge nature",
-        "classic lighthouse coastline", "ancient amphitheater ruins",
-        "historic windmill countryside", "traditional pagoda garden"
-    ],
-    "paisajes_naturales": [
-        "serene mountain lake reflection", "peaceful waterfall forest",
-        "ancient oak tree meadow", "pristine alpine valley",
-        "rolling green hills sunrise", "tranquil river bend",
-        "misty morning forest path", "gentle coastal cliffs"
-    ],
-    "arte_cultura": [
-        "classical marble sculpture garden", "historic fountain plaza",
-        "ancient stone circle monument", "traditional art museum",
-        "peaceful cultural garden", "historic observatory dome",
-        "classical music hall architecture", "ancient library ruins"
-    ],
-    "monumentos_positivos": [
-        "peace memorial garden", "historic lighthouse beacon",
-        "ancient astronomical observatory", "traditional cultural center",
-        "historic university campus", "peaceful meditation garden",
-        "classical architectural marvel", "ancient healing temple"
-    ],
-    "naturaleza_simbolica": [
-        "centuries old tree wisdom", "sacred mountain peak",
-        "pristine crystal cave", "ancient hot springs",
-        "peaceful butterfly garden", "serene bamboo forest",
-        "majestic aurora landscape", "tranquil zen garden"
-    ]
-}
-
-async def search_safe_target_with_duckduckgo(search_term: str) -> Optional[Dict[str, str]]:
-    """
-    Busca una imagen usando DuckDuckGo con términos éticos y seguros.
-    Por ahora usa el pool verificado de objetivos seguros.
-    """
+def extract_score_from_analysis(analysis_text: str) -> float:
+    """Extrae la puntuación numérica del análisis."""
     try:
-        # Usar el pool verificado de objetivos seguros
-        selected_target = random.choice(VERIFIED_SAFE_TARGETS)
-        logger.info(f"Objetivo seleccionado del pool verificado: {selected_target['name']}")
-        return selected_target
+        # Buscar patrones como "8.5/10", "Puntuación: 7.2", etc.
+        score_patterns = [
+            r'(\d+\.?\d*)/10',
+            r'Puntuación.*?(\d+\.?\d*)',
+            r'Score.*?(\d+\.?\d*)',
+            r'(\d+\.?\d*)\s*/\s*10'
+        ]
         
-    except Exception as e:
-        logger.error(f"Error en búsqueda de objetivo: {e}")
-        return None
-
-async def select_ethical_target() -> Dict[str, str]:
-    """
-    Selecciona un objetivo ético usando criterios de seguridad psicológica.
-    """
-    try:
-        # Seleccionar directamente del pool verificado
-        target = random.choice(VERIFIED_SAFE_TARGETS)
-        logger.info(f"Objetivo ético seleccionado: {target['name']}")
-        return target
-            
-    except Exception as e:
-        logger.error(f"Error seleccionando objetivo ético: {e}")
-        # Fallback seguro garantizado
-        return VERIFIED_SAFE_TARGETS[0]  # Siempre tenemos al menos uno
+        for pattern in score_patterns:
+            match = re.search(pattern, analysis_text, re.IGNORECASE)
+            if match:
+                score = float(match.group(1))
+                return min(score, 10.0)  # Máximo 10.0
+        
+        # Si no se encuentra, devolver puntaje neutro
+        return 5.0
+        
+    except:
+        return 5.0
 
 # Modelos Pydantic
 class DrawingSubmission(BaseModel):
@@ -281,8 +844,8 @@ class APIResponse(BaseModel):
     status: str
     message: Optional[str] = None
 
-# --- 5. SERVIDOR API (FastAPI) ---
-app_fastapi = FastAPI(title="Protocolo Nautilus API", version="3.0.0")
+# --- 7. SERVIDOR API (FastAPI) ---
+app_fastapi = FastAPI(title="Protocolo Nautilus API", version="3.1.0")
 app_fastapi.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app_fastapi.post("/submit_drawing", response_model=APIResponse)
@@ -336,7 +899,7 @@ async def submit_drawing(submission: DrawingSubmission):
         logger.error(f"Error en submit_drawing para {user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 6. FUNCIONES DE IA ESPECIALIZADAS ---
+# --- 8. FUNCIONES DE IA ESPECIALIZADAS ---
 def describe_objective_with_blip(image_bytes: bytes) -> str:
     if not blip_model: 
         return "Modelo de visión local no disponible."
@@ -396,7 +959,8 @@ async def get_professional_analysis_with_mistral(user_transcript: str, target_de
     
     system_prompt = """Eres un Analista Senior de Percepción Remota con experiencia en protocolos científicos estándar. 
 Tu evaluación debe ser profesional, constructiva y basada en criterios establecidos de correlación en percepción remota.
-Usa terminología apropiada del campo y mantén un tono alentador pero riguroso."""
+Usa terminología apropiada del campo y mantén un tono alentador pero riguroso.
+IMPORTANTE: Debes incluir una puntuación numérica final en formato "X.X/10.0" al final del análisis."""
     
     user_prompt = f"""ANÁLISIS DE SESIÓN DE PERCEPCIÓN REMOTA
 
@@ -490,32 +1054,93 @@ Genera un informe profesional en Markdown siguiendo la estructura estándar de e
         logger.error(f"Error generando análisis profesional con Mistral: {e}")
         return "Error: El servicio de análisis profesional no está disponible."
 
-# --- 7. HANDLERS DE TELEGRAM ---
+# --- 9. HANDLERS DE TELEGRAM ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     user_sessions[user.id] = {"chat_id": update.effective_chat.id, "session_data": {}}
     
-    # Seleccionar objetivo ético y generar coordenadas profesionales
-    selected_target = await select_ethical_target()
-    target_ref = generate_professional_coordinates()
+    # Mensaje inicial del protocolo (usuario lee mientras buscamos objetivo)
+    protocol_message = f"""🧠 <b>PROTOCOLO NAUTILUS v3.1</b>
+<i>Sistema de Percepción Remota Controlada</i>
+
+Hola {user.mention_html()}, bienvenido al sistema más avanzado de percepción remota.
+
+<b>🔬 ¿QUÉ HAREMOS?</b>
+Participarás en una sesión científica de 4 fases donde percibirás información sobre un objetivo remoto usando solo sus coordenadas numéricas.
+
+<b>🛡️ MEDIDAS DE SEGURIDAD</b>
+• Solo objetivos éticos: arquitectura histórica, paisajes naturales, arte
+• Sin contenido traumático, violento o controvertido
+• Búsqueda automática con filtros de seguridad
+• Protección de identidad con pseudónimos
+
+<b>⚗️ CÓMO FUNCIONA</b>
+• <b>IA de Búsqueda:</b> Selecciona objetivos seguros en tiempo real
+• <b>IA de Análisis:</b> Evalúa tu boceto objetivamente  
+• <b>IA de Correlación:</b> Compara tus datos con el objetivo real
+
+<b>📊 INVESTIGACIÓN</b>
+Tus datos (anónimos) contribuyen a la investigación sobre percepción remota. Tu pseudónimo: <code>{get_user_pseudonym(user.id)}</code>
+
+<b>⏳ PREPARANDO OBJETIVO...</b>
+<i>Buscando objetivo ético usando DuckDuckGo...</i>"""
+
+    # Enviar mensaje del protocolo
+    sent_message = await update.message.reply_html(protocol_message)
     
-    # Guardar datos de la sesión
-    user_sessions[user.id]["session_data"]["target"] = selected_target
-    user_sessions[user.id]["session_data"]["target_ref"] = target_ref
+    # Buscar objetivo en paralelo mientras el usuario lee
+    try:
+        # Generar coordenadas profesionales
+        target_ref = generate_professional_coordinates()
+        
+        # Buscar objetivo ético dinámicamente
+        selected_target = await select_ethical_target_dynamic()
+        
+        # Guardar datos de la sesión
+        user_sessions[user.id]["session_data"]["target"] = selected_target
+        user_sessions[user.id]["session_data"]["target_ref"] = target_ref
+        
+        logger.info(f"Usuario {user.id} ({user.first_name}) inició sesión. Objetivo: {selected_target['name']}, Coordenadas: {target_ref}")
+        
+        # Crear nuevo mensaje con las coordenadas (en lugar de editar)
+        success_message = f"""✅ <b>OBJETIVO SELECCIONADO</b>
+
+<b>Coordenadas asignadas:</b> <code>{target_ref}</code>
+
+<b>FASE 1: IMPRESIONES GESTALT</b>
+Describe tus <b>primeras impresiones</b> sobre el objetivo:
+
+• Sensaciones táctiles (rugoso, suave, frío, cálido)
+• Impresiones dimensionales (grande, pequeño, alto, ancho)  
+• Datos primitivos de forma o estructura
+
+<i>Las impresiones son sutiles como \"recuerdos descoloridos\". Confía en tus primeras intuiciones.</i>"""
+        
+        await update.message.reply_html(success_message)
+        
+    except Exception as e:
+        logger.error(f"Error en búsqueda de objetivo: {e}")
+        # Fallback si falla la búsqueda
+        target_ref = generate_professional_coordinates()
+        selected_target = get_fallback_target()
+        user_sessions[user.id]["session_data"]["target"] = selected_target
+        user_sessions[user.id]["session_data"]["target_ref"] = target_ref
+        
+        fallback_message = f"""✅ <b>OBJETIVO SELECCIONADO</b> (Fallback)
+
+<b>Coordenadas asignadas:</b> <code>{target_ref}</code>
+
+<b>FASE 1: IMPRESIONES GESTALT</b>
+Describe tus <b>primeras impresiones</b> sobre el objetivo:
+
+• Sensaciones táctiles
+• Impresiones dimensionales  
+• Datos primitivos de forma
+
+<i>Confía en tus primeras intuiciones.</i>"""
+        
+        await update.message.reply_html(fallback_message)
     
-    logger.info(f"Usuario {user.id} ({user.first_name}) inició sesión. Objetivo: {selected_target['name']}, Coordenadas: {target_ref}")
-    
-    await update.message.reply_html(
-        f"Hola {user.mention_html()}.\n"
-        f"Bienvenido al <b>Protocolo Nautilus v3.0</b> - <i>Percepción Remota Controlada</i>\n\n"
-        f"<b>Coordenadas del objetivo:</b> <code>{target_ref}</code>\n\n"
-        f"<b>FASE 1: IMPRESIONES GESTALT</b>\n"
-        f"Describe tus <b>primeras impresiones</b> sobre el objetivo. Estas pueden incluir:\n\n"
-        f"• Sensaciones táctiles (rugoso, suave, frío, cálido)\n"
-        f"• Impresiones dimensionales (grande, pequeño, alto, ancho)\n"
-        f"• Datos primitivos de forma o estructura\n\n"
-        f"<i>Nota: Las impresiones son sutiles, como \"recuerdos descoloridos\". Confía en tus primeras intuiciones sin analizarlas.</i>"
-    )
     return FASE_1_GESTALT
 
 async def fase_1_gestalt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -629,6 +1254,12 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_transcript, target_desc, sketch_desc, target_info['name'], target_ref
     )
     
+    # Extraer puntuación para research
+    score = extract_score_from_analysis(session_analysis)
+    
+    # Guardar datos de la sesión para investigación
+    save_session_data(user_id, session_data, score)
+    
     # Enviar revelación del objetivo
     await context.bot.send_photo(
         chat_id=user_id, 
@@ -681,13 +1312,17 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 parse_mode='HTML'
             )
     
-    # Mensaje de cierre profesional
+    # Mensaje de cierre con información de investigación
+    pseudonym = get_user_pseudonym(user_id)
     await update.message.reply_html(
-        f"🙏 <b>Sesión de Percepción Remota Completada</b>\n\n"
-        f"Gracias por participar en este protocolo controlado. Tus datos han sido procesados "
-        f"siguiendo estándares profesionales de evaluación.\n\n"
-        f"<b>Recuerda:</b> La percepción remota es una habilidad que se desarrolla con práctica. "
-        f"Cada sesión proporciona datos valiosos para tu crecimiento en esta disciplina.\n\n"
+        f"🙏 <b>Sesión Completada</b>\n\n"
+        f"Gracias por participar, <b>{pseudonym}</b>!\n"
+        f"Tu puntuación: <b>{score:.1f}/10.0</b>\n\n"
+        f"<b>📊 Contribución a la Investigación:</b>\n"
+        f"• Datos guardados de forma anónima\n"
+        f"• Ayudas a identificar patrones en percepción remota\n"
+        f"• Objetivos exitosos se agregan al pool de investigación\n\n"
+        f"<i>Cada sesión nos acerca más a entender este fenómeno.</i>\n\n"
         f"Para una nueva sesión, envía /start"
     )
     
@@ -701,52 +1336,81 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Sesión cancelada. Envía /start para comenzar una nueva sesión de percepción remota.")
     return ConversationHandler.END
 
-# --- 8. COMANDOS ADICIONALES ---
+# --- 10. COMANDOS ADICIONALES ---
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Proporciona información sobre el protocolo de percepción remota."""
     info_text = """
-🧠 <b>PROTOCOLO NAUTILUS - Información</b>
+🧠 <b>PROTOCOLO NAUTILUS - Información Detallada</b>
 
 <b>¿Qué es la Percepción Remota?</b>
-Es la capacidad de obtener información sobre un objetivo distante o inaccesible usando medios extrasensoriales. No se trata de "ver" el objetivo, sino de percibir datos sutiles que se manifiestan como:
+Es la capacidad de obtener información sobre un objetivo distante usando medios extrasensoriales. No se trata de "ver" el objetivo, sino de percibir datos sutiles.
 
-• <b>Datos sensoriales:</b> tacto, gusto, olfato
-• <b>Datos dimensionales:</b> tamaño, masa, densidad
-• <b>Datos estructurales:</b> formas, relaciones espaciales
-• <b>Datos conceptuales:</b> propósito, emociones, significado
+<b>🔬 Metodología Científica:</b>
+• Coordenadas aleatorias generadas automáticamente
+• Búsqueda de objetivos éticos en tiempo real
+• Análisis objetivo mediante IA especializada
+• Datos anónimos para investigación
 
-<b>El Proceso:</b>
-Las impresiones llegan como "ráfagas suaves de información", similares a recuerdos descoloridos. Rara vez son imágenes claras o visualmente impactantes.
+<b>🛡️ Seguridad Garantizada:</b>
+• Solo lugares históricos, arquitectura, paisajes
+• Filtros automáticos contra contenido traumático
+• Protección de identidad con pseudónimos
 
-<b>Seguridad:</b>
-Este protocolo usa únicamente objetivos seguros: lugares históricos, arquitectura, paisajes naturales y monumentos culturales. Se evitan temas controversiales o traumáticos.
-
-<b>Metodología:</b>
-Seguimos protocolos estándar de percepción remota controlada con coordenadas aleatorias y análisis objetivo mediante IA.
+<b>📊 Sistema de Research:</b>
+• Cada sesión contribuye a la base de datos científica
+• Objetivos exitosos se identifican automáticamente
+• Análisis de patrones de percepción remota
 """
     await update.message.reply_html(info_text)
 
 async def estadisticas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Muestra estadísticas básicas del sistema."""
-    active_sessions = len(user_sessions)
-    stats_text = f"""
+    """Muestra estadísticas del sistema y del usuario."""
+    try:
+        # Estadísticas generales
+        active_sessions = len(user_sessions)
+        user_pseudonym = get_user_pseudonym(update.effective_user.id)
+        
+        # Cargar datos de investigación si existen
+        user_stats = "Sin sesiones previas"
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Estadísticas del usuario
+            user_sessions_data = [s for s in data["sessions"] if s["user_pseudonym"] == user_pseudonym]
+            if user_sessions_data:
+                avg_score = sum(s["score"] for s in user_sessions_data) / len(user_sessions_data)
+                best_score = max(s["score"] for s in user_sessions_data)
+                total_sessions = len(user_sessions_data)
+                user_stats = f"Sesiones: {total_sessions} | Promedio: {avg_score:.1f} | Mejor: {best_score:.1f}"
+        
+        stats_text = f"""
 📊 <b>ESTADÍSTICAS DEL SISTEMA</b>
 
-• <b>Sesiones activas:</b> {active_sessions}
-• <b>Versión del protocolo:</b> 3.0
-• <b>IA Local:</b> {'🟢 Activa' if blip_model else '🔴 Inactiva'}
-• <b>IA en la Nube:</b> {'🟢 Activa' if openrouter_client else '🔴 Inactiva'}
+<b>🤖 Estado del Sistema:</b>
+• Sesiones activas: {active_sessions}
+• Versión: 3.1 (DuckDuckGo Real)
+• IA Local: {'🟢 Activa' if blip_model else '🔴 Inactiva'}
+• IA en la Nube: {'🟢 Activa' if openrouter_client else '🔴 Inactiva'}
 
-<b>Características:</b>
+<b>👤 Tu Perfil:</b>
+• Pseudónimo: <code>{user_pseudonym}</code>
+• Estadísticas: {user_stats}
+
+<b>🔬 Características:</b>
+✅ Búsqueda dinámica de objetivos
+✅ Análisis inmediato de bocetos  
 ✅ Coordenadas profesionales aleatorias
-✅ Selección ética de objetivos
-✅ Análisis inmediato de bocetos
-✅ Terminología científica apropiada
+✅ Sistema de investigación integrado
 ✅ Protocolos de seguridad psicológica
 """
-    await update.message.reply_html(stats_text)
+        await update.message.reply_html(stats_text)
+        
+    except Exception as e:
+        logger.error(f"Error en estadísticas: {e}")
+        await update.message.reply_text("❌ Error al generar estadísticas.")
 
-# --- 9. CONFIGURACIÓN FINAL DE LA APLICACIÓN ---
+# --- 11. CONFIGURACIÓN FINAL DE LA APLICACIÓN ---
 def setup_telegram_application() -> Application:
     global telegram_app
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -769,7 +1433,7 @@ def setup_telegram_application() -> Application:
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("info", info))
     app.add_handler(CommandHandler("estadisticas", estadisticas))
-    app.add_handler(CommandHandler("stats", estadisticas))  # Alias
+    app.add_handler(CommandHandler("stats", estadisticas))
     
     telegram_app = app
     return app
@@ -785,8 +1449,9 @@ async def run_services():
         await app.initialize()
         await app.start()
         await app.updater.start_polling()
-        logger.info("🤖 Protocolo Nautilus v3.0 funcionando...")
-        logger.info("📡 Sistema de percepción remota controlada activo")
+        logger.info("🤖 Protocolo Nautilus v3.1 funcionando...")
+        logger.info("🔍 Sistema DuckDuckGo de búsqueda dinámica activo")
+        logger.info("📊 Sistema de investigación y datos habilitado")
         await server.serve()
         await app.updater.stop()
         await app.stop()
@@ -794,9 +1459,10 @@ async def run_services():
 
 def main():
     """Función principal de ejecución."""
-    logger.info("🚀 Iniciando Protocolo Nautilus v3.0 - Sistema Profesional")
-    logger.info("🔬 Implementando protocolos de percepción remota controlada")
-    logger.info("🛡️ Sistema de selección ética de objetivos activado")
+    logger.info("🚀 Iniciando Protocolo Nautilus v3.1 - DuckDuckGo Real + Research")
+    logger.info("🔬 Sistema de percepción remota con búsqueda dinámica")
+    logger.info("🛡️ Protocolos de seguridad ética implementados")
+    logger.info("📊 Sistema de investigación y pseudónimos activado")
     
     try:
         asyncio.run(run_services())

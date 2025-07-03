@@ -1,0 +1,31 @@
+{
+  "sessions": [
+    {
+      "timestamp": "2025-07-03T01:56:47.397786",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "3470-B7",
+      "target_name": "Misty Morning Forest",
+      "target_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=600&fit=crop",
+      "score": 2.0,
+      "phases": {
+        "gestalt": "ddd",
+        "sensorial": "ddd",
+        "conceptual": "ddd"
+      }
+    },
+    {
+      "timestamp": "2025-07-03T02:38:49.094583",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "73993-4631",
+      "target_name": "Timeless Stone Archway",
+      "target_url": "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=800&h=600&fit=crop",
+      "score": 5.0,
+      "phases": {
+        "gestalt": "rocoso",
+        "sensorial": "grande, se repite, estructural",
+        "conceptual": "ancestral, prehispanico, construido por el hombre"
+      }
+    }
+  ],
+  "high_score_targets": []
+}

@@ -34,3 +34,14 @@ Pillow
 
 # Librería para descargar las imágenes de los objetivos desde sus URLs
 requests
+
+# === Dependencias para DuckDuckGo y Research ===
+
+# Para web scraping ético de DuckDuckGo (fallback)
+beautifulsoup4
+
+# Para parsing HTML (viene con beautifulsoup4 pero por claridad)
+lxml
+
+# Librería especializada para búsquedas en DuckDuckGo (método principal)
+duckduckgo-search
