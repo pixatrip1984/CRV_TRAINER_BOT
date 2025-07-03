@@ -5,9 +5,173 @@
     <!-- Estas etiquetas <meta> son importantes para una buena experiencia en móviles -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Lienzo Nautilus</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+/* === ESTILOS GENERALES === */
+body, html { 
+    margin: 0; 
+    padding: 0; 
+    width: 100%; 
+    height: 100%; 
+    overflow: hidden; 
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #000000);
+}
+
+/* === HEADER CON COORDENADAS === */
+#target-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 50px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+#target-coordinates {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.15);
+    padding: 8px 16px;
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+#coordinates-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.9);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#coordinates-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffffff;
+    font-family: 'Courier New', monospace;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    min-width: 100px;
+    text-align: center;
+}
+
+/* === CONTENEDOR DEL LIENZO === */
+#canvas-container { 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    width: 100%; 
+    height: calc(100% - 110px); /* 50px header + 60px controls */
+    margin-top: 50px;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+#drawing-canvas { 
+    border: 2px solid var(--tg-theme-hint-color, #999999);
+    border-radius: 12px;
+    touch-action: none; /* Crucial para móviles */
+    background-color: #ffffff;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* === CONTROLES === */
+#controls { 
+    position: fixed; 
+    bottom: 0; 
+    width: 100%; 
+    height: 60px; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    background: linear-gradient(180deg, rgba(240,240,240,0.95) 0%, rgba(230,230,230,0.95) 100%);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(0,0,0,0.1);
+    z-index: 999;
+}
+
+button { 
+    padding: 12px 24px; 
+    font-size: 16px; 
+    font-weight: 600;
+    border: 2px solid #ddd; 
+    border-radius: 25px; 
+    cursor: pointer;
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+    color: white;
+    border-color: #ee5a24;
+    box-shadow: 0 4px 15px rgba(238, 90, 36, 0.3);
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(238, 90, 36, 0.4);
+}
+
+button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 10px rgba(238, 90, 36, 0.3);
+}
+
+/* === ESTADOS DE CARGA === */
+.loading {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 480px) {
+    #target-header {
+        height: 45px;
+    }
+    
+    #canvas-container {
+        height: calc(100% - 105px);
+        margin-top: 45px;
+        padding: 5px;
+    }
+    
+    #coordinates-label {
+        font-size: 12px;
+    }
+    
+    #coordinates-value {
+        font-size: 14px;
+    }
+    
+    button {
+        padding: 10px 20px;
+        font-size: 14px;
+    }
+}
+    </style>
 </head>
 <body>
+    <!-- Header con las coordenadas del objetivo -->
+    <div id="target-header">
+        <div id="target-coordinates">
+            <span id="coordinates-label">Objetivo:</span>
+            <span id="coordinates-value">Cargando...</span>
+        </div>
+    </div>
+
     <!-- El contenedor principal para centrar el lienzo -->
     <div id="canvas-container">
         <canvas id="drawing-canvas"></canvas>
@@ -23,7 +187,309 @@
     <!-- Importamos la librería de la API de Telegram. Siempre debe ir primero. -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     
-    <!-- Importamos nuestro script personalizado que contiene la lógica del lienzo y la comunicación -->
-    <script src="script.js"></script>
+    <script>
+document.addEventListener("DOMContentLoaded", () => {
+    // ⚠️ IMPORTANTE: Reemplaza esta URL con tu URL de ngrok
+    const NGROK_URL = "https://29cb-2a09-bac5-4bbd-2632-00-3ce-8.ngrok-free.app";
+    
+    // Referencias a elementos del DOM
+    const coordinatesValue = document.getElementById('coordinates-value');
+    const canvas = document.getElementById('drawing-canvas');
+    const ctx = canvas.getContext('2d');
+    const clearButton = document.getElementById('clear-button');
+    
+    // Primero, verificamos que estamos dentro de un entorno de Telegram
+    if (window.Telegram && window.Telegram.WebApp) {
+        
+        const tg = window.Telegram.WebApp;
+        
+        // --- INICIALIZACIÓN DE LA MINI APP ---
+        
+        // Le decimos a Telegram que nuestro script está listo. Es importante.
+        tg.ready();
+        
+        // Le pedimos a Telegram que expanda la ventana para tener más espacio.
+        tg.expand();
+
+        // --- OBTENER COORDENADAS DEL OBJETIVO ---
+        function extractTargetCoordinates() {
+            try {
+                // Intentamos obtener las coordenadas desde los parámetros de inicio
+                const startParam = tg.initDataUnsafe?.start_parameter;
+                if (startParam) {
+                    // El formato esperado es: "target_CODIGO"
+                    if (startParam.startsWith('target_')) {
+                        const coordinates = startParam.substring(7); // Remover "target_"
+                        return coordinates;
+                    }
+                }
+                
+                // Fallback: intentamos desde initData
+                if (tg.initData) {
+                    const urlParams = new URLSearchParams(tg.initData);
+                    const startParam = urlParams.get('start_parameter');
+                    if (startParam && startParam.startsWith('target_')) {
+                        return startParam.substring(7);
+                    }
+                }
+                
+                // Último fallback: generar coordenadas temporales
+                return `PN-${Math.floor(Math.random() * 9000) + 1000}-${['W','X','Y','Z'][Math.floor(Math.random() * 4)]}`;
+                
+            } catch (error) {
+                console.error('Error extrayendo coordenadas:', error);
+                return `PN-${Math.floor(Math.random() * 9000) + 1000}-${['W','X','Y','Z'][Math.floor(Math.random() * 4)]}`;
+            }
+        }
+
+        // Mostrar las coordenadas del objetivo
+        const targetCoordinates = extractTargetCoordinates();
+        coordinatesValue.textContent = targetCoordinates;
+        coordinatesValue.classList.remove('loading');
+
+        console.log('Coordenadas del objetivo:', targetCoordinates);
+
+        // --- CONFIGURACIÓN DEL BOTÓN PRINCIPAL OFICIAL DE TELEGRAM ---
+        // Le damos un texto, lo activamos y lo mostramos.
+        tg.MainButton.setText("Enviar Dibujo ✅");
+        tg.MainButton.enable();
+        tg.MainButton.show();
+
+        // --- CONFIGURACIÓN DEL LIENZO (CANVAS) ---
+
+        // Función para ajustar el tamaño del lienzo al de la ventana
+        function resizeCanvas() {
+            const container = document.getElementById('canvas-container');
+            canvas.width = container.clientWidth * 0.95;
+            canvas.height = container.clientHeight * 0.95;
+            ctx.strokeStyle = "#000"; // Color del trazo: negro
+            ctx.lineWidth = 3;        // Grosor del trazo
+            ctx.lineCap = "round";    // Terminaciones de línea redondeadas
+            ctx.lineJoin = "round";   // Uniones de línea redondeadas
+        }
+
+        // Redimensionamos al cargar y si la ventana cambia de tamaño
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let drawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        // --- LÓGICA DE DIBUJO MEJORADA (para ratón y pantallas táctiles) ---
+
+        function getCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            let clientX, clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function startDrawing(e) { 
+            drawing = true;
+            const coords = getCoordinates(e);
+            lastX = coords.x;
+            lastY = coords.y;
+            
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            e.preventDefault();
+        }
+
+        function stopDrawing() { 
+            if (drawing) {
+                drawing = false;
+                ctx.beginPath();
+            }
+        }
+
+        function draw(e) {
+            if (!drawing) return; 
+            e.preventDefault(); // Evita que la página haga scroll mientras se dibuja en el móvil
+            
+            const coords = getCoordinates(e);
+            
+            ctx.lineTo(coords.x, coords.y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(coords.x, coords.y);
+            
+            lastX = coords.x;
+            lastY = coords.y;
+        }
+
+        // --- ASIGNACIÓN DE EVENTOS ---
+
+        // Eventos para el ratón
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseleave', stopDrawing);
+
+        // Eventos para pantallas táctiles
+        canvas.addEventListener('touchstart', startDrawing, { passive: false });
+        canvas.addEventListener('touchend', stopDrawing, { passive: false });
+        canvas.addEventListener('touchmove', draw, { passive: false });
+        canvas.addEventListener('touchcancel', stopDrawing, { passive: false });
+        
+        // Evento para el botón de borrar
+        clearButton.addEventListener('click', () => { 
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        });
+
+        // --- FUNCIÓN PARA OBTENER USER ID ---
+
+        function getUserId() {
+            try {
+                // Intentamos obtener el ID del usuario desde initDataUnsafe
+                if (tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id) {
+                    return tg.initDataUnsafe.user.id;
+                }
+                // Fallback: intentamos desde initData si está disponible
+                if (tg.initData) {
+                    const urlParams = new URLSearchParams(tg.initData);
+                    const userParam = urlParams.get('user');
+                    if (userParam) {
+                        const userData = JSON.parse(decodeURIComponent(userParam));
+                        return userData.id;
+                    }
+                }
+                return null;
+            } catch (error) {
+                console.error('Error obteniendo User ID:', error);
+                return null;
+            }
+        }
+
+        // --- FUNCIÓN PARA ENVIAR EL DIBUJO ---
+
+        async function sendDrawingToServer() {
+            try {
+                // Validamos que ngrok URL esté configurada
+                if (NGROK_URL === "REEMPLAZAR_CON_TU_URL_DE_NGROK") {
+                    tg.showAlert("❌ Error: URL de ngrok no configurada. Consulta el README.md");
+                    return;
+                }
+
+                // Convertimos el contenido del lienzo a Data URL
+                const imageData = canvas.toDataURL('image/png', 0.8);
+                
+                // Obtenemos el ID del usuario
+                const userId = getUserId();
+                if (!userId) {
+                    tg.showAlert("❌ Error: No se pudo obtener el ID de usuario");
+                    return;
+                }
+
+                // Preparamos los datos para enviar
+                const payload = {
+                    imageData: imageData,
+                    userId: userId,
+                    targetCoordinates: targetCoordinates, // Incluimos las coordenadas
+                    timestamp: new Date().toISOString(),
+                    canvasSize: {
+                        width: canvas.width,
+                        height: canvas.height
+                    }
+                };
+
+                // Mostramos el botón como "enviando"
+                tg.MainButton.setText("Enviando... ⏳");
+                tg.MainButton.disable();
+
+                console.log('Enviando dibujo al servidor...', NGROK_URL);
+
+                // Realizamos la petición HTTP POST al servidor
+                const response = await fetch(`${NGROK_URL}/submit_drawing`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'ngrok-skip-browser-warning': 'true' // Para evitar warnings de ngrok
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('Respuesta del servidor:', result);
+
+                // Si todo salió bien, mostramos confirmación y cerramos
+                if (result.status === 'ok') {
+                    tg.showAlert("✅ Dibujo enviado correctamente", () => {
+                        tg.close();
+                    });
+                } else {
+                    throw new Error(result.message || 'Respuesta inesperada del servidor');
+                }
+
+            } catch (error) {
+                console.error('Error enviando dibujo:', error);
+                
+                // Restauramos el botón
+                tg.MainButton.setText("Enviar Dibujo ✅");
+                tg.MainButton.enable();
+
+                // Mostramos error específico dependiendo del tipo
+                let errorMessage = "❌ Error enviando el dibujo. ";
+                
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    errorMessage += "Verifica que ngrok esté funcionando y la URL sea correcta.";
+                } else if (error.message.includes('HTTP')) {
+                    errorMessage += `Servidor respondió: ${error.message}`;
+                } else {
+                    errorMessage += `Detalles: ${error.message}`;
+                }
+                
+                tg.showAlert(errorMessage);
+            }
+        }
+
+        // --- MANEJADOR DEL BOTÓN PRINCIPAL ---
+        
+        // Este es el manejador oficial para el botón principal de Telegram
+        tg.onEvent('mainButtonClicked', sendDrawingToServer);
+
+        // --- FUNCIONALIDAD DE RETROALIMENTACIÓN VISUAL ---
+        
+        // Mostrar estado de conexión
+        window.addEventListener('online', () => {
+            console.log('Conexión restaurada');
+        });
+        
+        window.addEventListener('offline', () => {
+            console.log('Conexión perdida');
+            tg.showAlert("⚠️ Sin conexión a internet");
+        });
+
+    } else {
+        // Mensaje de error si la página se abre fuera de Telegram
+        console.error("API de Telegram WebApp no encontrada. Esta página debe abrirse dentro de Telegram.");
+        document.body.innerHTML = `
+            <div style="padding: 20px; text-align: center; font-family: sans-serif;">
+                <h1>❌ Error</h1>
+                <p>Esta aplicación solo funciona dentro de Telegram.</p>
+                <p>Por favor, abre el enlace desde un bot de Telegram.</p>
+            </div>
+        `;
+    }
+});
+    </script>
 </body>
 </html>
