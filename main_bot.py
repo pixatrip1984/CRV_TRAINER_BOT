@@ -110,50 +110,50 @@ def generate_professional_coordinates() -> str:
     return selected_format()
 
 # --- FUNCIONES AUXILIARES PARA MANEJO DE TEXTO ---
-def clean_markdown_for_telegram(text: str) -> str:
+def format_analysis_for_telegram(analysis_text: str) -> str:
     """
-    Limpia el markdown para evitar errores de parsing en Telegram.
+    Convierte el análisis en formato limpio para Telegram usando HTML.
     """
-    # Escapar caracteres problemáticos
-    text = text.replace('_', '\\_')
-    text = text.replace('*', '\\*')
-    text = text.replace('[', '\\[')
-    text = text.replace(']', '\\]')
-    text = text.replace('(', '\\(')
-    text = text.replace(')', '\\)')
-    text = text.replace('~', '\\~')
-    text = text.replace('`', '\\`')
-    text = text.replace('>', '\\>')
-    text = text.replace('#', '\\#')
-    text = text.replace('+', '\\+')
-    text = text.replace('-', '\\-')
-    text = text.replace('=', '\\=')
-    text = text.replace('|', '\\|')
-    text = text.replace('{', '\\{')
-    text = text.replace('}', '\\}')
-    text = text.replace('.', '\\.')
-    text = text.replace('!', '\\!')
+    # Limpiar y estructurar el texto
+    lines = analysis_text.split('\n')
+    formatted_lines = []
     
-    return text
-
-def strip_markdown(text: str) -> str:
-    """
-    Elimina todo el markdown dejando solo texto plano.
-    """
-    import re
-    # Eliminar headers
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    # Eliminar bold/italic
-    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-    text = re.sub(r'\*(.*?)\*', r'\1', text)
-    # Eliminar código
-    text = re.sub(r'`(.*?)`', r'\1', text)
-    # Eliminar links
-    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
-    # Limpiar caracteres especiales
-    text = re.sub(r'[_~>#+\-=|{}\.!]', '', text)
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Convertir headers de markdown a HTML
+        if line.startswith('# '):
+            formatted_lines.append(f"\n🔹 <b>{line[2:].strip()}</b>\n")
+        elif line.startswith('## '):
+            formatted_lines.append(f"\n📋 <b>{line[3:].strip()}</b>")
+        elif line.startswith('### '):
+            formatted_lines.append(f"\n• <b>{line[4:].strip()}</b>")
+        # Convertir elementos de lista
+        elif line.startswith('- ') or line.startswith('• '):
+            formatted_lines.append(f"  • {line[2:].strip()}")
+        # Convertir texto en negrita
+        elif '**' in line:
+            line = line.replace('**', '')
+            formatted_lines.append(f"<b>{line}</b>")
+        # Texto normal
+        else:
+            formatted_lines.append(line)
     
-    return text
+    # Unir y limpiar
+    result = '\n'.join(formatted_lines)
+    
+    # Limpiar caracteres problemáticos
+    result = result.replace('*', '')
+    result = result.replace('#', '')
+    result = result.replace('`', '')
+    result = result.replace('[', '')
+    result = result.replace(']', '')
+    result = result.replace('(', '')
+    result = result.replace(')', '')
+    
+    return result
 
 # Pool corregido de objetivos con URLs verificadas
 VERIFIED_SAFE_TARGETS = [
@@ -642,7 +642,7 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         parse_mode='HTML'
     )
     
-    # Enviar análisis profesional con manejo de errores mejorado
+    # Enviar análisis profesional con formato limpio
     if "Error:" in session_analysis:
         await context.bot.send_message(
             chat_id=user_id, 
@@ -651,33 +651,33 @@ async def finalizar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
     else:
         try:
-            # Limpiar el markdown para evitar errores de parsing
-            cleaned_analysis = clean_markdown_for_telegram(session_analysis)
+            # Formatear el análisis para Telegram
+            formatted_analysis = format_analysis_for_telegram(session_analysis)
             
-            # Dividir el análisis en partes si es muy largo
-            if len(cleaned_analysis) > 4000:
-                parts = [cleaned_analysis[i:i+4000] for i in range(0, len(cleaned_analysis), 4000)]
+            # Dividir en partes si es necesario
+            if len(formatted_analysis) > 4000:
+                parts = [formatted_analysis[i:i+4000] for i in range(0, len(formatted_analysis), 4000)]
                 for i, part in enumerate(parts):
                     header = f"📊 <b>ANÁLISIS PROFESIONAL - Parte {i+1}/{len(parts)}</b>\n\n" if i == 0 else ""
                     await context.bot.send_message(
                         chat_id=user_id, 
                         text=header + part, 
-                        parse_mode='Markdown'
+                        parse_mode='HTML'
                     )
-                    await asyncio.sleep(1)  # Pausa para evitar límites de tasa
+                    await asyncio.sleep(1)
             else:
                 await context.bot.send_message(
                     chat_id=user_id, 
-                    text=f"📊 <b>ANÁLISIS PROFESIONAL</b>\n\n{cleaned_analysis}", 
-                    parse_mode='Markdown'
+                    text=f"📊 <b>ANÁLISIS PROFESIONAL</b>\n\n{formatted_analysis}", 
+                    parse_mode='HTML'
                 )
         except Exception as e:
-            logger.error(f"Error enviando análisis con Markdown: {e}")
-            # Fallback: enviar como texto plano
-            plain_analysis = strip_markdown(session_analysis)
+            logger.error(f"Error enviando análisis formateado: {e}")
+            # Enviar versión básica si falla el formateo
+            basic_text = session_analysis.replace('#', '').replace('*', '').replace('`', '')
             await context.bot.send_message(
                 chat_id=user_id, 
-                text=f"📊 <b>ANÁLISIS PROFESIONAL</b>\n\n{plain_analysis}", 
+                text=f"📊 <b>ANÁLISIS PROFESIONAL</b>\n\n{basic_text}", 
                 parse_mode='HTML'
             )
     
