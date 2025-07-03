@@ -107,23 +107,23 @@ class APIResponse(BaseModel):
 TARGET_POOL = [
     {
         "id": "T001", "name": "Las Pirámides de Giza con la Esfinge",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Le_Sphinx_et_les_Pyramides_de_Gizeh.jpg/1280px-Le_Sphinx_et_les_Pyramides_de_Gizeh.jpg",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Great_Sphinx_of_Giza_9049.jpg",
     },
     {
         "id": "T002", "name": "El Puente Golden Gate en la niebla",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Golden_Gate_Bridge_at_sunset_1.jpg/1920px-Golden_Gate_Bridge_at_sunset_1.jpg",
+        "url": "https://commons.wikimedia.org/wiki/File:Golden_Gate_Bridge_Yang_Ming_Line.jpg",
     },
     {
         "id": "T003", "name": "La Torre Eiffel de noche",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Tour_Eiffel_de_Nuit_-_Paris_2007_v2.jpg/1024px-Tour_Eiffel_de_Nuit_-_Paris_2007_v2.jpg",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/d/d2/Eiffelturm.JPG",
     },
     {
         "id": "T004", "name": "La Cascada Seljalandsfoss en Islandia",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Seljalandsfoss_in_July_2021.jpg/1024px-Seljalandsfoss_in_July_2021.jpg",
+        "url": "https://upload.wikimedia.org/wikipedia/commons/6/69/Seljalandsfoss%2C_Su%C3%B0urland%2C_Islandia%2C_2014-08-16%2C_DD_201-203_HDR.JPG",
     },
     {
         "id": "T005", "name": "El Transbordador Espacial despegando",
-        "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/The_Space_Shuttle_Challenger_lifts_off_-_GPN-2000-001293.jpg/1024px-The_Space_Shuttle_Challenger_lifts_off_-_GPN-2000-001293.jpg",
+        "url": "https://commons.wikimedia.org/wiki/File:STS-125_Atlantis_Liftoff_02.jpg",
     },
 ]
 
