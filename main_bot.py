@@ -21,6 +21,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -48,11 +49,15 @@ from database_manager import NautilusDB
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+NGROK_URL = os.getenv("NGROK_URL")
 FASTAPI_HOST = os.getenv("FASTAPI_HOST", "0.0.0.0")
 FASTAPI_PORT = int(os.getenv("FASTAPI_PORT", "8000"))
 
+
 if not TELEGRAM_TOKEN: 
     raise ValueError("TELEGRAM_TOKEN no encontrado.")
+if not NGROK_URL:
+    raise ValueError("NGROK_URL no encontrado.")
 
 CANVAS_URL = "https://pixatrip1984.github.io/nautilus-canvas/"
 DATA_FILE = "nautilus_research_data.json"
@@ -1169,6 +1174,20 @@ async def submit_drawing(submission: DrawingSubmission):
     except Exception as e:
         logger.error(f"Error en submit_drawing para {user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@app_fastapi.get("/")
+async def serve_canvas():
+    """Sirve el HTML del canvas con la URL de ngrok inyectada."""
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            html_content = f.read()
+        
+        # Reemplazar el placeholder con la URL real
+        html_content = html_content.replace("{{NGROK_URL}}", NGROK_URL)
+        
+        return HTMLResponse(content=html_content)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Archivo index.html no encontrado")
 
 # --- 11. FUNCIONES DE IA ESPECIALIZADAS ---
 def describe_objective_with_blip(image_bytes: bytes) -> str:
