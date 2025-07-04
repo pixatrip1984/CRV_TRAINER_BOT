@@ -62,7 +62,7 @@ if not TELEGRAM_TOKEN:
 if not PUBLIC_BOT_URL:
     raise ValueError("PUBLIC_BOT_URL no encontrada en el archivo .env. ¡Es necesaria para que la WebApp funcione!")
 
-CANVAS_URL = "https://pixatrip1984.github.io/nautilus-canvas/"
+CANVAS_URL = "https://pixatrip1984.github.io/CRV_TRAINER_BOT/"
 DATA_FILE = "nautilus_research_data.json"
 
 logging.basicConfig(

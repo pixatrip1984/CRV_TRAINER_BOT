@@ -129,6 +129,19 @@
         "sensorial": "Colorido",
         "conceptual": "No vi nada"
       }
+    },
+    {
+      "timestamp": "2025-07-03T22:48:08.812024",
+      "user_pseudonym": "BetaSeer109",
+      "coordinates": "20488-6373",
+      "target_name": "Silent Ancient Library",
+      "target_url": "https://miro.medium.com/v2/resize:fit:750/1*ARxQtvC1F2jovkRdsDhY6g.jpeg",
+      "score": 2.5,
+      "phases": {
+        "gestalt": "jjj",
+        "sensorial": "mmm",
+        "conceptual": "ddd"
+      }
     }
   ],
   "high_score_targets": [
