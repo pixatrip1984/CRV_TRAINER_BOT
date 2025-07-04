@@ -45,14 +45,22 @@ from telegram.ext import (
 from database_manager import NautilusDB
 
 # --- 1. CONFIGURACIÓN INICIAL ---
+# REEMPLAZA ESTE BLOQUE COMPLETO
+
+# --- 1. CONFIGURACIÓN INICIAL ---
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+PUBLIC_BOT_URL = os.getenv("PUBLIC_BOT_URL") # <-- AÑADIDO: Carga la URL pública
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 FASTAPI_HOST = os.getenv("FASTAPI_HOST", "0.0.0.0")
 FASTAPI_PORT = int(os.getenv("FASTAPI_PORT", "8000"))
 
 if not TELEGRAM_TOKEN: 
-    raise ValueError("TELEGRAM_TOKEN no encontrado.")
+    raise ValueError("TELEGRAM_TOKEN no encontrado en el archivo .env.")
+
+# <-- AÑADIDO: Validación crítica para la URL pública
+if not PUBLIC_BOT_URL:
+    raise ValueError("PUBLIC_BOT_URL no encontrada en el archivo .env. ¡Es necesaria para que la WebApp funcione!")
 
 CANVAS_URL = "https://pixatrip1984.github.io/nautilus-canvas/"
 DATA_FILE = "nautilus_research_data.json"
@@ -1433,13 +1441,17 @@ async def fase_1_gestalt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     return FASE_2_SENSORIAL
 
+# REEMPLAZA ESTA FUNCIÓN COMPLETA
+
 async def fase_2_sensorial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     target_ref = user_sessions[user_id]["session_data"]["target_ref"]
     
     user_sessions[user_id]["session_data"]["fase2"] = update.message.text
     
-    webapp_url = f"{CANVAS_URL}?target={target_ref}"
+    # --- CAMBIO IMPORTANTE: Construimos la URL pasando la del backend ---
+    # La URL de ngrok (PUBLIC_BOT_URL) se añade como un parámetro 'backend_url'
+    webapp_url = f"{CANVAS_URL}?target={target_ref}&backend_url={PUBLIC_BOT_URL}"
     
     keyboard = [[InlineKeyboardButton("🎨 Abrir Canvas de Percepción", web_app=WebAppInfo(url=webapp_url))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
